@@ -2,19 +2,19 @@
 
 declare(strict_types=1);
 
-namespace GMTA\Velocita\Composer\Commands;
+namespace ThreeSixtyEu\Nexus\Composer\Commands;
 
 use Composer\Command\BaseCommand;
-use GMTA\Velocita\Composer\VelocitaPlugin;
+use ThreeSixtyEu\Nexus\Composer\NexusPlugin;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
 class EnableCommand extends BaseCommand
 {
-    protected VelocitaPlugin $plugin;
+    protected NexusPlugin $plugin;
 
-    public function __construct(VelocitaPlugin $plugin)
+    public function __construct(NexusPlugin $plugin)
     {
         parent::__construct();
 
@@ -24,9 +24,10 @@ class EnableCommand extends BaseCommand
     protected function configure(): void
     {
         $this
-            ->setName('velocita:enable')
-            ->setDescription('Enables the Velocita plugin')
-            ->addArgument('url', InputArgument::OPTIONAL, 'Sets the URL to your Velocita instance');
+            ->setName('nexus:enable')
+            ->setAliases(['velocita:enable'])
+            ->setDescription('Enables the Nexus Composer plugin')
+            ->addArgument('url', InputArgument::OPTIONAL, 'Sets the URL to your Nexus proxy instance');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -44,7 +45,7 @@ class EnableCommand extends BaseCommand
         // Write new configuration
         $this->plugin->writeConfiguration($config);
 
-        $output->writeln('Velocita is now <info>enabled</info>.');
+        $output->writeln('Nexus is now <info>enabled</info>.');
         return 0;
     }
 }

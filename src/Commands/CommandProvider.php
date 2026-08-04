@@ -2,17 +2,17 @@
 
 declare(strict_types=1);
 
-namespace GMTA\Velocita\Composer\Commands;
+namespace ThreeSixtyEu\Nexus\Composer\Commands;
 
 use Composer\Plugin\Capability\CommandProvider as CommandProviderCapability;
-use GMTA\Velocita\Composer\VelocitaPlugin;
+use ThreeSixtyEu\Nexus\Composer\NexusPlugin;
 
 class CommandProvider implements CommandProviderCapability
 {
-    protected VelocitaPlugin $plugin;
+    protected NexusPlugin $plugin;
 
     /**
-     * @param array{plugin: VelocitaPlugin} $arguments
+     * @param array{plugin: NexusPlugin} $arguments
      */
     public function __construct(array $arguments)
     {

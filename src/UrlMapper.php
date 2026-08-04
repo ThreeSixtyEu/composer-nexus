@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace GMTA\Velocita\Composer;
+namespace ThreeSixtyEu\Nexus\Composer;
 
 use Composer\IO\IOInterface;
 use Composer\Package\PackageInterface;
 use Composer\Plugin\PreFileDownloadEvent;
-use GMTA\Velocita\Composer\Config\MirrorMapping;
+use ThreeSixtyEu\Nexus\Composer\Config\MirrorMapping;
 
 use function explode;
 use function file_get_contents;
@@ -123,15 +123,15 @@ class UrlMapper
                 if ($exists === null) {
                     self::$proxyOffline = true;
                     if ($this->io) {
-                        $this->io->writeError('<warning>[Velocita-Nexus] Proxy server appears offline or timed out. Disabling proxy for remaining packages.</warning>');
+                        $this->io->writeError('<warning>[Nexus] Proxy server appears offline or timed out. Disabling proxy for remaining packages.</warning>');
                     }
                     return;
                 }
 
                 if ($exists === true) {
                     if ($this->io) {
-                        $this->io->writeError('<info>[Velocita-Nexus] Intercepted URL:</info> ' . $url);
-                        $this->io->writeError('<info>[Velocita-Nexus] Rewriting URL to Nexus Proxy:</info> ' . $nexusUrl);
+                        $this->io->writeError('<info>[Nexus] Intercepted URL:</info> ' . $url);
+                        $this->io->writeError('<info>[Nexus] Rewriting URL to Nexus Proxy:</info> ' . $nexusUrl);
                     }
                     $event->setProcessedUrl($nexusUrl);
                     return;
@@ -139,13 +139,13 @@ class UrlMapper
 
                 // Step 2: If missing in Nexus, request metadata to trigger caching, then fall back immediately
                 if ($this->io) {
-                    $this->io->writeError('<info>[Velocita-Nexus] Package missing in Nexus proxy. Triggering cache warmup for ' . $packageName . ' (' . $version . ')</info>');
+                    $this->io->writeError('<info>[Nexus] Package missing in Nexus proxy. Triggering cache warmup for ' . $packageName . ' (' . $version . ')</info>');
                 }
                 $this->triggerNexusMetadataIndexing($this->rootUrl, $vendor, $name);
 
                 // We no longer sleep or wait for Nexus to finish downloading. Fall back to original URL immediately.
                 if ($this->io) {
-                    $this->io->writeError('<comment>[Velocita-Nexus] Falling back to original URL to avoid blocking:</comment> ' . $url);
+                    $this->io->writeError('<comment>[Nexus] Falling back to original URL to avoid blocking:</comment> ' . $url);
                 }
                 return;
             }
@@ -208,6 +208,7 @@ class UrlMapper
     private function urlExistsInNexus(string $url): ?bool
     {
         $insecure = filter_var(getenv('COMPOSER_DIST_PROXY_INSECURE'), FILTER_VALIDATE_BOOLEAN)
+            || filter_var(getenv('NEXUS_INSECURE'), FILTER_VALIDATE_BOOLEAN)
             || filter_var(getenv('VELOCITA_INSECURE'), FILTER_VALIDATE_BOOLEAN);
 
         if (function_exists('curl_init')) {
@@ -276,6 +277,7 @@ class UrlMapper
     private function fetchUrlQuietly(string $url, int $timeout = 2): ?string
     {
         $insecure = filter_var(getenv('COMPOSER_DIST_PROXY_INSECURE'), FILTER_VALIDATE_BOOLEAN)
+            || filter_var(getenv('NEXUS_INSECURE'), FILTER_VALIDATE_BOOLEAN)
             || filter_var(getenv('VELOCITA_INSECURE'), FILTER_VALIDATE_BOOLEAN);
 
         if (function_exists('curl_init')) {

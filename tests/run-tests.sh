@@ -3,18 +3,18 @@ set -euo pipefail
 
 pushd $(dirname $0)/../ >/dev/null
 
-velocitaUrl="${1:-}"
-if [ -z "${velocitaUrl}" ]; then
-    echo 'Please provide a URL to a running Velocita instance.'
+nexusUrl="${1:-}"
+if [ -z "${nexusUrl}" ]; then
+    echo 'Please provide a URL to a running Nexus proxy instance.'
     echo
-    echo "    Example: $0 https://path.to.velocita.tld"
+    echo "    Example: $0 https://path.to.nexus.tld/repository/composer-proxy/"
     echo
     exit 1
 fi
 
 phpVersions=(7.4 8.0 8.1 8.2)
 composerVersions=(2.2.21 2.4.4 2.5.8 2.6.5)
-testImage=velocita-test-image
+testImage=nexus-test-image
 
 buildImage() {
     local phpVersion=$1
@@ -39,7 +39,7 @@ runTestSuite() {
 
     buildImage "${phpVersion}" "${composerVersion}"
     docker run -t \
-        --env VELOCITA_URL="${velocitaUrl}" \
+        --env NEXUS_URL="${nexusUrl}" \
         --mount type=bind,source=$(pwd)/${outputDir},target=/output \
         "${testImage}:php-${phpVersion}-composer-${composerVersion}"
 }

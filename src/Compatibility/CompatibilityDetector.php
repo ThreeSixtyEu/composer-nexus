@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace GMTA\Velocita\Composer\Compatibility;
+namespace ThreeSixtyEu\Nexus\Composer\Compatibility;
 
 use Composer\Composer;
 use Composer\Installer\PackageEvent;
 use Composer\IO\IOInterface;
-use GMTA\Velocita\Composer\Composer\OperationAdapter;
-use GMTA\Velocita\Composer\Composer\PluginHelper;
-use GMTA\Velocita\Composer\UrlMapper;
+use ThreeSixtyEu\Nexus\Composer\Composer\OperationAdapter;
+use ThreeSixtyEu\Nexus\Composer\Composer\PluginHelper;
+use ThreeSixtyEu\Nexus\Composer\UrlMapper;
 
 use function array_key_exists;
 use function get_class;

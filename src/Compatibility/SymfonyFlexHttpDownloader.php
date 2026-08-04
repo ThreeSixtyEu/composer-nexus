@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace GMTA\Velocita\Composer\Compatibility;
+namespace ThreeSixtyEu\Nexus\Composer\Compatibility;
 
 use Composer\Config;
 use Composer\IO\IOInterface;
 use Composer\Util\HttpDownloader;
-use GMTA\Velocita\Composer\UrlMapper;
+use ThreeSixtyEu\Nexus\Composer\UrlMapper;
 
 use function sprintf;
 

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace GMTA\Velocita\Composer;
+namespace ThreeSixtyEu\Nexus\Composer;
 
 use Composer\Composer;
 use Composer\EventDispatcher\EventSubscriberInterface;
@@ -15,25 +15,26 @@ use Composer\Plugin\PluginEvents;
 use Composer\Plugin\PluginInterface;
 use Composer\Plugin\PreFileDownloadEvent;
 use Exception;
-use GMTA\Velocita\Composer\Commands\CommandProvider;
-use GMTA\Velocita\Composer\Compatibility\CompatibilityDetector;
-use GMTA\Velocita\Composer\Composer\ComposerFactory;
-use GMTA\Velocita\Composer\Config\PluginConfig;
-use GMTA\Velocita\Composer\Config\PluginConfigReader;
-use GMTA\Velocita\Composer\Config\PluginConfigWriter;
-use GMTA\Velocita\Composer\Config\RemoteConfig;
+use ThreeSixtyEu\Nexus\Composer\Commands\CommandProvider;
+use ThreeSixtyEu\Nexus\Composer\Compatibility\CompatibilityDetector;
+use ThreeSixtyEu\Nexus\Composer\Composer\ComposerFactory;
+use ThreeSixtyEu\Nexus\Composer\Config\PluginConfig;
+use ThreeSixtyEu\Nexus\Composer\Config\PluginConfigReader;
+use ThreeSixtyEu\Nexus\Composer\Config\PluginConfigWriter;
+use ThreeSixtyEu\Nexus\Composer\Config\RemoteConfig;
 use LogicException;
 use RuntimeException;
 use UnexpectedValueException;
-
+use function file_exists;
 use function is_array;
 use function sprintf;
 
 use const PHP_INT_MAX;
 
-class VelocitaPlugin implements PluginInterface, EventSubscriberInterface, Capable
+class NexusPlugin implements PluginInterface, EventSubscriberInterface, Capable
 {
-    protected const CONFIG_FILE = 'velocita.json';
+    protected const CONFIG_FILE = 'nexus.json';
+    protected const LEGACY_CONFIG_FILE = 'velocita.json';
     protected const REMOTE_CONFIG_URL = '%s/mirrors.json';
 
     protected static bool $enabled = true;
@@ -60,8 +61,14 @@ class VelocitaPlugin implements PluginInterface, EventSubscriberInterface, Capab
 
     private function initialize(): void
     {
-        $this->configPath = sprintf('%s/%s', ComposerFactory::getComposerHomeDir(), static::CONFIG_FILE);
-        $this->configuration = (new PluginConfigReader())->readOrNew($this->configPath);
+        $homeDir = ComposerFactory::getComposerHomeDir();
+        $primaryPath = sprintf('%s/%s', $homeDir, static::CONFIG_FILE);
+        $legacyPath = sprintf('%s/%s', $homeDir, static::LEGACY_CONFIG_FILE);
+
+        $this->configPath = $primaryPath;
+
+        $readPath = file_exists($primaryPath) ? $primaryPath : (file_exists($legacyPath) ? $legacyPath : $primaryPath);
+        $this->configuration = (new PluginConfigReader())->readOrNew($readPath);
 
         static::$enabled = $this->configuration->isEnabled();
         if (!static::$enabled) {
@@ -70,13 +77,13 @@ class VelocitaPlugin implements PluginInterface, EventSubscriberInterface, Capab
 
         $url = $this->configuration->getURL();
         if ($url === null) {
-            throw new LogicException('Velocita enabled but no URL set');
+            throw new LogicException('Nexus enabled but no URL set');
         }
         try {
             $remoteConfig = $this->getRemoteConfig($url);
             $mirrors = $remoteConfig->getMirrors();
         } catch (Exception $e) {
-            $this->io->writeError(sprintf('[Velocita-Nexus] Remote mirrors.json skipped: %s', $e->getMessage()), true, IOInterface::DEBUG);
+            $this->io->writeError(sprintf('[Nexus] Remote mirrors.json skipped: %s', $e->getMessage()), true, IOInterface::DEBUG);
             $mirrors = [];
         }
 

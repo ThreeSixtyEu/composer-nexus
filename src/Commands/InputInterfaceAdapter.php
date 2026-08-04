@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace GMTA\Velocita\Composer\Commands;
+namespace ThreeSixtyEu\Nexus\Composer\Commands;
 
 use Symfony\Component\Console\Input\InputInterface;
 use UnexpectedValueException;
