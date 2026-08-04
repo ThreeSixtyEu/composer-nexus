@@ -24,7 +24,8 @@ class DisableCommand extends BaseCommand
     {
         $this
             ->setName('velocita:disable')
-            ->setDescription('Disables the Velocita plugin');
+            ->setAliases(['nexus:disable'])
+            ->setDescription('Disables the Velocita / Nexus plugin');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -36,7 +37,7 @@ class DisableCommand extends BaseCommand
         // Write new configuration
         $this->plugin->writeConfiguration($config);
 
-        $output->writeln('Velocita is now <warning>disabled</warning>.');
+        $output->writeln('Velocita / Nexus is now <warning>disabled</warning>.');
         return 0;
     }
 }

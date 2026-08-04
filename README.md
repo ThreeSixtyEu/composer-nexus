@@ -13,7 +13,7 @@ modify your projects.
 ### Prerequisites
 
 * PHP 7.4 or newer
-* A running [Velocita Proxy](https://github.com/gmta/velocita-proxy) instance
+* A running [Velocita Proxy](https://github.com/gmta/velocita-proxy) or Nexus Composer proxy instance
 * Composer 2
 
 ### Installation
@@ -24,12 +24,17 @@ without having to add it to your project's `composer.json`.
 ```
 composer global config allow-plugins.gmta/composer-velocita true
 composer global require gmta/composer-velocita
+
+# For Velocita Proxy:
 composer velocita:enable https://url.to.your.velocita.tld/
+
+# For Nexus Proxy:
+composer nexus:enable https://nexus.your-domain.lan/repository/composer-proxy/
 ```
 
 ### Usage
 
-After enabling and configuring Velocita, it is automatically used for all Composer projects when running `require`,
+After enabling and configuring Velocita / Nexus proxy, it is automatically used for all Composer projects when running `require`,
 `update`, `install`, etcetera.
 
 ### Removal
@@ -37,7 +42,7 @@ After enabling and configuring Velocita, it is automatically used for all Compos
 Disable the plugin by executing:
 
 ```
-composer velocita:disable
+composer velocita:disable   # or composer nexus:disable
 ```
 
 If you want to remove the plugin completely, execute:

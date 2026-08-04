@@ -74,13 +74,13 @@ class VelocitaPlugin implements PluginInterface, EventSubscriberInterface, Capab
         }
         try {
             $remoteConfig = $this->getRemoteConfig($url);
+            $mirrors = $remoteConfig->getMirrors();
         } catch (Exception $e) {
-            $this->io->writeError(sprintf('Failed to retrieve remote config: %s', $e->getMessage()));
-            static::$enabled = false;
-            return;
+            $this->io->writeError(sprintf('[Velocita-Nexus] Remote mirrors.json skipped: %s', $e->getMessage()), true, IOInterface::DEBUG);
+            $mirrors = [];
         }
 
-        $this->urlMapper = new UrlMapper($url, $remoteConfig->getMirrors());
+        $this->urlMapper = new UrlMapper($url, $mirrors, $this->io);
         $this->compatibilityDetector = new CompatibilityDetector($this->composer, $this->io, $this->urlMapper);
     }
 
@@ -122,16 +122,7 @@ class VelocitaPlugin implements PluginInterface, EventSubscriberInterface, Capab
 
     public function onPreFileDownload(PreFileDownloadEvent $event): void
     {
-        $originalUrl = $event->getProcessedUrl();
-        $mappedUrl = $this->urlMapper->applyMappings($originalUrl);
-        if ($mappedUrl !== $originalUrl) {
-            $this->io->write(
-                sprintf('%s(url=%s): mapped to %s', __METHOD__, $originalUrl, $mappedUrl),
-                true,
-                IOInterface::DEBUG
-            );
-        }
-        $event->setProcessedUrl($mappedUrl);
+        $this->urlMapper->rewriteDownloadUrl($event);
     }
 
     public function getConfiguration(): PluginConfig

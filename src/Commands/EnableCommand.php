@@ -25,8 +25,9 @@ class EnableCommand extends BaseCommand
     {
         $this
             ->setName('velocita:enable')
-            ->setDescription('Enables the Velocita plugin')
-            ->addArgument('url', InputArgument::OPTIONAL, 'Sets the URL to your Velocita instance');
+            ->setAliases(['nexus:enable'])
+            ->setDescription('Enables the Velocita / Nexus plugin')
+            ->addArgument('url', InputArgument::OPTIONAL, 'Sets the URL to your Velocita or Nexus proxy instance');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -44,7 +45,7 @@ class EnableCommand extends BaseCommand
         // Write new configuration
         $this->plugin->writeConfiguration($config);
 
-        $output->writeln('Velocita is now <info>enabled</info>.');
+        $output->writeln('Velocita / Nexus is now <info>enabled</info>.');
         return 0;
     }
 }
