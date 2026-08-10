@@ -1,0 +1,29 @@
+services:
+  velocita:
+    image: gmta/velocita-proxy:latest
+    container_name: velocita-proxy
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+  nexus:
+    image: sonatype/nexus3:latest
+    container_name: nexus-proxy
+    ports:
+      - "8081:8081"
+    volumes:
+      - nexus-data:/nexus-data
+    restart: unless-stopped
+
+  nexus-init:
+    image: alpine/curl:latest
+    container_name: nexus-init
+    depends_on:
+      - nexus
+    volumes:
+      - nexus-data:/nexus-data
+      - ./tests:/tests
+    entrypoint: ["/bin/sh", "/tests/setup-nexus.sh"]
+
+volumes:
+  nexus-data:

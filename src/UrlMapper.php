@@ -20,15 +20,21 @@ use function json_decode;
 use function ltrim;
 use function parse_url;
 use function preg_match;
+use function preg_quote;
+use function rawurlencode;
 use function rtrim;
-use function str_contains;
-use function str_starts_with;
+use function sprintf;
+use function strncmp;
+use function strpos;
 use function strtolower;
+use function trim;
 use const FILTER_VALIDATE_BOOLEAN;
 use const PHP_URL_HOST;
 
 class UrlMapper
 {
+    private const GITHUB_REGEX = '#^https://api.github.com/repos/(?<package>.+)/zipball/(?<hash>[0-9a-f]+)$#i';
+
     private string $rootUrl;
     /**
      * @var MirrorMapping[]
@@ -38,6 +44,7 @@ class UrlMapper
 
     private static bool $proxyOffline = false;
     private static array $metadataCache = [];
+    private static bool $insecureWarned = false;
 
     /**
      * @param MirrorMapping[] $mappings
@@ -47,6 +54,38 @@ class UrlMapper
         $this->rootUrl = rtrim($rootUrl, '/');
         $this->mappings = $mappings;
         $this->io = $io;
+    }
+
+    public function applyMappings(string $url): string
+    {
+        $patchedUrl = $this->applyGitHubShortcut($url);
+
+        foreach ($this->mappings as $mapping) {
+            $prefix = $mapping->getNormalizedUrl();
+            $regex = sprintf('#^https?:%s(?<path>.+)$#i', preg_quote($prefix));
+            $matches = [];
+            if (preg_match($regex, $patchedUrl, $matches) === 1) {
+                return sprintf(
+                    '%s/%s/%s',
+                    rtrim($this->rootUrl, '/'),
+                    trim($mapping->getPath(), '/'),
+                    ltrim($matches['path'], '/')
+                );
+            }
+        }
+
+        return $patchedUrl;
+    }
+
+    protected function applyGitHubShortcut(string $url): string
+    {
+        $matches = [];
+        if (preg_match(self::GITHUB_REGEX, $url, $matches) === 1) {
+            $package = $matches['package'];
+            $hash = $matches['hash'];
+            return sprintf('https://codeload.github.com/%s/legacy.zip/%s', $package, $hash);
+        }
+        return $url;
     }
 
     public function rewriteDownloadUrl(PreFileDownloadEvent $event): void
@@ -61,13 +100,29 @@ class UrlMapper
         }
 
         // 1. Only process remote HTTP/HTTPS URLs
-        if (!str_starts_with($url, 'http://') && !str_starts_with($url, 'https://')) {
+        if (!self::startsWith($url, 'http://') && !self::startsWith($url, 'https://')) {
             return;
         }
 
         // 2. Skip patch and diff files (e.g. cweagans/composer-patches)
         $lowerUrl = strtolower($url);
-        if (str_contains($lowerUrl, '.patch') || str_contains($lowerUrl, '.diff')) {
+        if (self::contains($lowerUrl, '.patch') || self::contains($lowerUrl, '.diff')) {
+            return;
+        }
+
+        // 3. If Velocita mirror mappings exist, use standard Velocita mapping rules
+        if (!empty($this->mappings)) {
+            $mappedUrl = $this->applyMappings($url);
+            if ($mappedUrl !== $url) {
+                if ($this->io) {
+                    $this->io->write(
+                        sprintf('[Velocita] Mapped URL %s to %s', $url, $mappedUrl),
+                        true,
+                        IOInterface::DEBUG
+                    );
+                }
+                $event->setProcessedUrl($mappedUrl);
+            }
             return;
         }
 
@@ -94,9 +149,12 @@ class UrlMapper
                 }
             }
 
-            if (str_contains($packageName, '/')) {
+            if (self::contains($packageName, '/')) {
                 [$vendor, $name] = explode('/', $packageName, 2);
-                $defaultNexusUrl = "{$this->rootUrl}/{$vendor}/{$name}/{$version}/{$vendor}-{$name}-{$version}.zip";
+                $vEnc = rawurlencode($vendor);
+                $nEnc = rawurlencode($name);
+                $verEnc = rawurlencode($version);
+                $defaultNexusUrl = "{$this->rootUrl}/{$vEnc}/{$nEnc}/{$verEnc}/{$vEnc}-{$nEnc}-{$verEnc}.zip";
 
                 // Extract git commit reference from package or URL if available
                 $reference = $package->getDistReference() ?: $package->getSourceReference();
@@ -144,7 +202,9 @@ class UrlMapper
 
     private function resolveNexusDistUrl(string $proxyBaseClean, string $vendor, string $name, string $version, ?string $reference = null): ?string
     {
-        $metadataUrl = "{$proxyBaseClean}/p2/{$vendor}/{$name}.json";
+        $vEnc = rawurlencode($vendor);
+        $nEnc = rawurlencode($name);
+        $metadataUrl = "{$proxyBaseClean}/p2/{$vEnc}/{$nEnc}.json";
 
         if (isset(self::$metadataCache[$metadataUrl])) {
             $json = self::$metadataCache[$metadataUrl];
@@ -181,7 +241,7 @@ class UrlMapper
 
             if ($versionMatches || $referenceMatches) {
                 if ($currentDistUrl) {
-                    if (!str_starts_with($currentDistUrl, 'http://') && !str_starts_with($currentDistUrl, 'https://')) {
+                    if (!self::startsWith($currentDistUrl, 'http://') && !self::startsWith($currentDistUrl, 'https://')) {
                         return "{$proxyBaseClean}/" . ltrim($currentDistUrl, '/');
                     }
                     return $currentDistUrl;
@@ -192,6 +252,16 @@ class UrlMapper
         return null;
     }
 
+    private static function startsWith(string $haystack, string $needle): bool
+    {
+        return $needle === '' || strncmp($haystack, $needle, \strlen($needle)) === 0;
+    }
+
+    private static function contains(string $haystack, string $needle): bool
+    {
+        return $needle === '' || strpos($haystack, $needle) !== false;
+    }
+
     /**
      * @return bool|null True if exists, false if 404/other, null if connection error or timeout
      */
@@ -199,6 +269,11 @@ class UrlMapper
     {
         $insecure = filter_var(getenv('COMPOSER_DIST_PROXY_INSECURE'), FILTER_VALIDATE_BOOLEAN)
             || filter_var(getenv('VELOCITA_INSECURE'), FILTER_VALIDATE_BOOLEAN);
+
+        if ($insecure && !self::$insecureWarned && $this->io) {
+            self::$insecureWarned = true;
+            $this->io->writeError('<warning>[Velocita-Nexus] Insecure TLS mode enabled (COMPOSER_DIST_PROXY_INSECURE / VELOCITA_INSECURE active).</warning>');
+        }
 
         if (function_exists('curl_init')) {
             $ch = curl_init($url);
@@ -254,9 +329,11 @@ class UrlMapper
 
     private function triggerNexusMetadataIndexing(string $proxyBase, string $vendor, string $name): void
     {
+        $vEnc = rawurlencode($vendor);
+        $nEnc = rawurlencode($name);
         $urls = [
-            "{$proxyBase}/p2/{$vendor}/{$name}.json",
-            "{$proxyBase}/p/{$vendor}/{$name}.json",
+            "{$proxyBase}/p2/{$vEnc}/{$nEnc}.json",
+            "{$proxyBase}/p/{$vEnc}/{$nEnc}.json",
         ];
         foreach ($urls as $url) {
             $this->fetchUrlQuietly($url, 1);

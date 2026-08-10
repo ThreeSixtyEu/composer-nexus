@@ -1,11 +1,16 @@
 #!/bin/ash
 set -eu
 
+proxyUrl="${PROXY_URL:-${VELOCITA_URL:-}}"
+proxyType="${PROXY_TYPE:-velocita}"
+enableCmd="${proxyType}:enable"
+disableCmd="${proxyType}:disable"
+
 # Show versions
 phpVersion=$(php -i | grep -m 1 'PHP Version' | cut -d' ' -f4)
 composerVersion=$(composer --version | cut -d' ' -f3)
 echo
-echo "PHP ${phpVersion} - Composer ${composerVersion}"
+echo "PHP ${phpVersion} - Composer ${composerVersion} - Mode: ${proxyType} (${proxyUrl})"
 echo '----------'
 echo
 
@@ -27,17 +32,17 @@ runCreateProject() {
     composer create-project --no-interaction --profile -vvv "${packageName}" project 2>&1 | tee "${outputPath}"
 }
 
-installVelocita() {
+installPlugin() {
     composer global config repositories.velocita-src path /usr/src/velocita/
     composer global require gmta/composer-velocita @dev
 }
 
-enableVelocita() {
-    composer velocita:enable "${VELOCITA_URL}"
+enablePlugin() {
+    composer ${enableCmd} "${proxyUrl}"
 }
 
-disableVelocita() {
-    composer velocita:disable
+disablePlugin() {
+    composer ${disableCmd}
 }
 
 echo '{"require":{"phpunit/phpunit":"9.6.10"}}' > composer.json
@@ -45,17 +50,18 @@ echo '{"require":{"phpunit/phpunit":"9.6.10"}}' > composer.json
 # Vanilla install
 runInstall /output/vanilla-install-output.txt
 
-# Configure Composer to allow plugins
+# Configure Composer to allow plugins and HTTP proxies
+composer config -g secure-http false
 composer config -g allow-plugins.symfony/flex true
 composer config -g allow-plugins.gmta/composer-velocita true
 
-# Velocita install
-installVelocita
-enableVelocita
-runInstall /output/velocita-install-output.txt
+# Plugin install
+installPlugin
+enablePlugin
+runInstall "/output/${proxyType}-install-output.txt"
 
 # Symfony Flex install
-disableVelocita
+disablePlugin
 if [[ "${phpVersion}" == 7.4.* ]]; then
     composer global require symfony/flex:1.20.2
 else
@@ -63,9 +69,9 @@ else
 fi
 runInstall /output/flex-install-output.txt
 
-# Velocita + Symfony Flex install
-enableVelocita
-runInstall /output/velocita-flex-install-output.txt
+# Plugin + Symfony Flex install
+enablePlugin
+runInstall "/output/${proxyType}-flex-install-output.txt"
 composer global remove symfony/flex
 
 # Vanilla create-project
@@ -74,9 +80,9 @@ if [[ "${phpVersion}" == 7.4.* ]]; then
 else
     symfonyVersion="v6.0.99"
 fi
-disableVelocita
+disablePlugin
 runCreateProject symfony/skeleton:${symfonyVersion} /output/vanilla-create-project-output.txt
 
-# Velocita + Symfony Flex create-project
-enableVelocita
-runCreateProject symfony/skeleton:${symfonyVersion} /output/velocita-create-project-output.txt
+# Plugin + Symfony Flex create-project
+enablePlugin
+runCreateProject symfony/skeleton:${symfonyVersion} "/output/${proxyType}-create-project-output.txt"

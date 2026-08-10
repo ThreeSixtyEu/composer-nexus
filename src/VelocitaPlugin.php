@@ -28,6 +28,7 @@ use UnexpectedValueException;
 
 use function is_array;
 use function sprintf;
+use function strpos;
 
 use const PHP_INT_MAX;
 
@@ -76,7 +77,12 @@ class VelocitaPlugin implements PluginInterface, EventSubscriberInterface, Capab
             $remoteConfig = $this->getRemoteConfig($url);
             $mirrors = $remoteConfig->getMirrors();
         } catch (Exception $e) {
-            $this->io->writeError(sprintf('[Velocita-Nexus] Remote mirrors.json skipped: %s', $e->getMessage()), true, IOInterface::DEBUG);
+            $msg = $e->getMessage();
+            if (strpos($msg, '404') !== false) {
+                $this->io->writeError(sprintf('[Velocita-Nexus] Remote mirrors.json returned 404; assuming Nexus Proxy mode.'), true, IOInterface::VERBOSE);
+            } else {
+                $this->io->writeError(sprintf('<warning>[Velocita-Nexus] Could not fetch remote mirrors.json (%s). Falling back to Nexus Proxy mode.</warning>', $msg), true, IOInterface::NORMAL);
+            }
             $mirrors = [];
         }
 
