@@ -13,11 +13,6 @@
             "email": "jelle@gmta.nl"
         }
     ],
-    "replace": {
-        "gmta/composer-nexus": "*",
-        "gmta/composer-velocita": "*",
-        "isaac/composer-velocita": "*"
-    },
     "require": {
         "php": ">=7.4",
         "ext-json": "*",
@@ -48,4 +43,3 @@
         "class": "ThreeSixtyEu\\Nexus\\Composer\\NexusPlugin"
     }
 }
-

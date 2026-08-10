@@ -208,8 +208,7 @@ class UrlMapper
     private function urlExistsInNexus(string $url): ?bool
     {
         $insecure = filter_var(getenv('COMPOSER_DIST_PROXY_INSECURE'), FILTER_VALIDATE_BOOLEAN)
-            || filter_var(getenv('NEXUS_INSECURE'), FILTER_VALIDATE_BOOLEAN)
-            || filter_var(getenv('VELOCITA_INSECURE'), FILTER_VALIDATE_BOOLEAN);
+            || filter_var(getenv('NEXUS_INSECURE'), FILTER_VALIDATE_BOOLEAN);
 
         if (function_exists('curl_init')) {
             $ch = curl_init($url);
@@ -277,8 +276,7 @@ class UrlMapper
     private function fetchUrlQuietly(string $url, int $timeout = 2): ?string
     {
         $insecure = filter_var(getenv('COMPOSER_DIST_PROXY_INSECURE'), FILTER_VALIDATE_BOOLEAN)
-            || filter_var(getenv('NEXUS_INSECURE'), FILTER_VALIDATE_BOOLEAN)
-            || filter_var(getenv('VELOCITA_INSECURE'), FILTER_VALIDATE_BOOLEAN);
+            || filter_var(getenv('NEXUS_INSECURE'), FILTER_VALIDATE_BOOLEAN);
 
         if (function_exists('curl_init')) {
             $ch = curl_init($url);

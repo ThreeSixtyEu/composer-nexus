@@ -33,7 +33,7 @@ installNexus() {
 }
 
 enableNexus() {
-    composer nexus:enable "${NEXUS_URL:-${VELOCITA_URL:-}}"
+    composer nexus:enable "${NEXUS_URL:-}"
 }
 
 disableNexus() {

@@ -24,7 +24,6 @@ class DisableCommand extends BaseCommand
     {
         $this
             ->setName('nexus:disable')
-            ->setAliases(['velocita:disable'])
             ->setDescription('Disables the Nexus Composer plugin');
     }
 

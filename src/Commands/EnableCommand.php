@@ -25,7 +25,6 @@ class EnableCommand extends BaseCommand
     {
         $this
             ->setName('nexus:enable')
-            ->setAliases(['velocita:enable'])
             ->setDescription('Enables the Nexus Composer plugin')
             ->addArgument('url', InputArgument::OPTIONAL, 'Sets the URL to your Nexus proxy instance');
     }

@@ -34,7 +34,6 @@ use const PHP_INT_MAX;
 class NexusPlugin implements PluginInterface, EventSubscriberInterface, Capable
 {
     protected const CONFIG_FILE = 'nexus.json';
-    protected const LEGACY_CONFIG_FILE = 'velocita.json';
     protected const REMOTE_CONFIG_URL = '%s/mirrors.json';
 
     protected static bool $enabled = true;
@@ -62,13 +61,8 @@ class NexusPlugin implements PluginInterface, EventSubscriberInterface, Capable
     private function initialize(): void
     {
         $homeDir = ComposerFactory::getComposerHomeDir();
-        $primaryPath = sprintf('%s/%s', $homeDir, static::CONFIG_FILE);
-        $legacyPath = sprintf('%s/%s', $homeDir, static::LEGACY_CONFIG_FILE);
-
-        $this->configPath = $primaryPath;
-
-        $readPath = file_exists($primaryPath) ? $primaryPath : (file_exists($legacyPath) ? $legacyPath : $primaryPath);
-        $this->configuration = (new PluginConfigReader())->readOrNew($readPath);
+        $this->configPath = sprintf('%s/%s', $homeDir, static::CONFIG_FILE);
+        $this->configuration = (new PluginConfigReader())->readOrNew($this->configPath);
 
         static::$enabled = $this->configuration->isEnabled();
         if (!static::$enabled) {
