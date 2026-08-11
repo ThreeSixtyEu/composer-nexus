@@ -60,8 +60,7 @@ class NexusPlugin implements PluginInterface, EventSubscriberInterface, Capable
 
     private function initialize(): void
     {
-        $homeDir = ComposerFactory::getComposerHomeDir();
-        $this->configPath = sprintf('%s/%s', $homeDir, static::CONFIG_FILE);
+        $this->configPath = sprintf('%s/%s', ComposerFactory::getComposerHomeDir(), static::CONFIG_FILE);
         $this->configuration = (new PluginConfigReader())->readOrNew($this->configPath);
 
         static::$enabled = $this->configuration->isEnabled();
