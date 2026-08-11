@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ruleset name="composer-velocita">
-    <description>PHP_CodeSniffer ruleset for composer-velocita</description>
+<ruleset name="composer-nexus">
+    <description>PHP_CodeSniffer ruleset for composer-nexus</description>
 
     <!-- Include src folder -->
     <file>src</file>

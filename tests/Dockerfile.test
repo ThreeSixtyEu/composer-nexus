@@ -16,15 +16,15 @@ RUN apk --no-cache upgrade \
 
 RUN mkdir /test \
     && chown testuser /test \
-    && mkdir /usr/src/velocita
+    && mkdir /usr/src/nexus
 USER testuser
 WORKDIR /test
 
 COPY tests/testsuite.sh /usr/local/bin/
 
-# Copy Velocita source
-COPY composer.json /usr/src/velocita/
-COPY src /usr/src/velocita/src/
+# Copy Nexus source
+COPY composer.json /usr/src/nexus/
+COPY src /usr/src/nexus/src/
 
 COPY --from=composer_base /usr/bin/composer /usr/local/bin/
 

@@ -1,18 +1,18 @@
 {
-    "name": "gmta/composer-velocita",
-    "description": "Fast and reliable Composer package downloads by using Velocita",
-    "keywords": ["composer", "cache", "performance", "speed", "availability", "velocita"],
+    "name": "threesixty-eu/composer-nexus",
+    "description": "Fast and reliable Composer package downloads using Nexus proxy",
+    "keywords": ["composer", "cache", "performance", "speed", "availability", "nexus", "proxy"],
     "type": "composer-plugin",
     "license": "MIT",
     "authors": [
+        {
+            "name": "3sixty team"
+        },
         {
             "name": "Jelle Raaijmakers",
             "email": "jelle@gmta.nl"
         }
     ],
-    "replace": {
-        "isaac/composer-velocita": "*"
-    },
     "require": {
         "php": ">=7.4",
         "ext-json": "*",
@@ -29,7 +29,7 @@
     "prefer-stable": true,
     "autoload": {
         "psr-4": {
-            "GMTA\\Velocita\\Composer\\": "src/"
+            "ThreeSixtyEu\\Nexus\\Composer\\": "src/"
         }
     },
     "config": {
@@ -40,6 +40,6 @@
         }
     },
     "extra": {
-        "class": "GMTA\\Velocita\\Composer\\VelocitaPlugin"
+        "class": "ThreeSixtyEu\\Nexus\\Composer\\NexusPlugin"
     }
 }

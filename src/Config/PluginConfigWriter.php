@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace GMTA\Velocita\Composer\Config;
+namespace ThreeSixtyEu\Nexus\Composer\Config;
 
 use function dirname;
 use function file_put_contents;

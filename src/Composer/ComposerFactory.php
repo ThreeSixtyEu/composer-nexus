@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace GMTA\Velocita\Composer\Composer;
+namespace ThreeSixtyEu\Nexus\Composer\Composer;
 
 use Composer\Factory;
 

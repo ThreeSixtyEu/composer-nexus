@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace GMTA\Velocita\Composer\Compatibility;
+namespace ThreeSixtyEu\Nexus\Composer\Compatibility;
 
 use Composer\IO\IOInterface;
 use Composer\Plugin\PluginInterface;
@@ -21,9 +21,9 @@ use function get_class;
 use function sprintf;
 
 /**
- * Symfony Flex and Velocita work great together, but the parallel dist file prefetcher in Flex is implemented as a new
- * RemoteFilesystem that completely bypasses any RFS already in place. Velocita fixes compatibility with Flex by
- * replacing their RemoteFilesystem with our own extension, which then maps URLs to the Velocita proxy.
+ * Symfony Flex and Nexus work great together, but the parallel dist file prefetcher in Flex is implemented as a new
+ * RemoteFilesystem that completely bypasses any RFS already in place. Nexus fixes compatibility with Flex by
+ * replacing their RemoteFilesystem with our own extension, which then maps URLs to the Nexus proxy.
  */
 class SymfonyFlexCompatibility implements CompatibilityFix
 {

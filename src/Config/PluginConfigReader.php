@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace GMTA\Velocita\Composer\Config;
+namespace ThreeSixtyEu\Nexus\Composer\Config;
 
-use GMTA\Velocita\Composer\Exceptions\IOException;
+use ThreeSixtyEu\Nexus\Composer\Exceptions\IOException;
 
 use function array_key_exists;
 use function file_get_contents;

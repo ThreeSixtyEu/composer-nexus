@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace GMTA\Velocita\Composer\Exceptions;
+namespace ThreeSixtyEu\Nexus\Composer\Exceptions;
 
 use RuntimeException;
 
