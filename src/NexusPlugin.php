@@ -26,9 +26,12 @@ use LogicException;
 use RuntimeException;
 use UnexpectedValueException;
 use function file_exists;
+use function filter_var;
+use function getenv;
 use function is_array;
 use function sprintf;
 
+use const FILTER_VALIDATE_BOOLEAN;
 use const PHP_INT_MAX;
 
 class NexusPlugin implements PluginInterface, EventSubscriberInterface, Capable
@@ -140,7 +143,18 @@ class NexusPlugin implements PluginInterface, EventSubscriberInterface, Capable
     {
         $httpDownloader = $this->composer->getLoop()->getHttpDownloader();
         $remoteConfigUrl = sprintf(static::REMOTE_CONFIG_URL, $url);
-        $response = $httpDownloader->get($remoteConfigUrl);
+
+        $options = [];
+        $insecure = filter_var(getenv('COMPOSER_DIST_PROXY_INSECURE'), FILTER_VALIDATE_BOOLEAN)
+            || filter_var(getenv('NEXUS_INSECURE'), FILTER_VALIDATE_BOOLEAN);
+        if ($insecure) {
+            $options['ssl'] = [
+                'verify_peer' => false,
+                'verify_peer_name' => false,
+            ];
+        }
+
+        $response = $httpDownloader->get($remoteConfigUrl, $options);
         if ($response->getStatusCode() !== 200) {
             throw new RuntimeException(
                 sprintf('Unexpected status code %d for URL %s', $response->getStatusCode(), $remoteConfigUrl)

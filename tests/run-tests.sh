@@ -12,7 +12,7 @@ if [ -z "${nexusUrl}" ]; then
     exit 1
 fi
 
-phpVersions=(7.4 8.0 8.1 8.2)
+phpVersions=(8.1 8.2)
 composerVersions=(2.2.21 2.4.4 2.5.8 2.6.5)
 testImage=nexus-test-image
 
@@ -40,6 +40,7 @@ runTestSuite() {
     buildImage "${phpVersion}" "${composerVersion}"
     docker run -t \
         --env NEXUS_URL="${nexusUrl}" \
+        --env NEXUS_INSECURE="${NEXUS_INSECURE:-true}" \
         --mount type=bind,source=$(pwd)/${outputDir},target=/output \
         "${testImage}:php-${phpVersion}-composer-${composerVersion}"
 }

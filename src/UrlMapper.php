@@ -20,10 +20,12 @@ use function json_decode;
 use function ltrim;
 use function parse_url;
 use function preg_match;
+use function preg_quote;
 use function rtrim;
 use function str_contains;
 use function str_starts_with;
 use function strtolower;
+use function trim;
 use const FILTER_VALIDATE_BOOLEAN;
 use const PHP_URL_HOST;
 
@@ -47,6 +49,32 @@ class UrlMapper
         $this->rootUrl = rtrim($rootUrl, '/');
         $this->mappings = $mappings;
         $this->io = $io;
+    }
+
+    public function applyMappings(string $url): string
+    {
+        if (self::$proxyOffline || empty($this->rootUrl)) {
+            return $url;
+        }
+
+        $patchedUrl = $url;
+
+        foreach ($this->mappings as $mapping) {
+            $prefix = $mapping->getNormalizedUrl();
+            $regex = sprintf('#^https?:%s(?<path>.+)$#i', preg_quote($prefix, '#'));
+            $matches = [];
+            if (preg_match($regex, $patchedUrl, $matches) === 1) {
+                $patchedUrl = sprintf(
+                    '%s/%s/%s',
+                    rtrim($this->rootUrl, '/'),
+                    trim($mapping->getPath(), '/'),
+                    ltrim($matches['path'], '/')
+                );
+                break;
+            }
+        }
+
+        return $patchedUrl;
     }
 
     public function rewriteDownloadUrl(PreFileDownloadEvent $event): void
