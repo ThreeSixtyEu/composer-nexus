@@ -43,6 +43,9 @@ class UrlMapper
     private ?IOInterface $io;
 
     private static bool $proxyOffline = false;
+    /**
+     * @var array<string, string|null>
+     */
     private static array $metadataCache = [];
     private static bool $insecureWarned = false;
 
@@ -113,7 +116,7 @@ class UrlMapper
         // 3. If Velocita mirror mappings exist, use standard Velocita mapping rules
         if (!empty($this->mappings)) {
             $mappedUrl = $this->applyMappings($url);
-            if ($mappedUrl !== $url) {
+            if ($mappedUrl !== '' && $mappedUrl !== $url) {
                 if ($this->io) {
                     $this->io->write(
                         sprintf('[Velocita] Mapped URL %s to %s', $url, $mappedUrl),
@@ -176,7 +179,7 @@ class UrlMapper
                     return;
                 }
 
-                if ($exists === true) {
+                if ($exists === true && $nexusUrl !== '') {
                     if ($this->io) {
                         $this->io->writeError('<info>[Velocita-Nexus] Intercepted URL:</info> ' . $url, true, IOInterface::DEBUG);
                         $this->io->writeError('<info>[Velocita-Nexus] Rewriting URL to Nexus Proxy:</info> ' . $nexusUrl, true, IOInterface::DEBUG);
