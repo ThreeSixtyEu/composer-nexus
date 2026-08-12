@@ -178,8 +178,8 @@ class UrlMapper
 
                 if ($exists === true) {
                     if ($this->io) {
-                        $this->io->writeError('<info>[Velocita-Nexus] Intercepted URL:</info> ' . $url);
-                        $this->io->writeError('<info>[Velocita-Nexus] Rewriting URL to Nexus Proxy:</info> ' . $nexusUrl);
+                        $this->io->writeError('<info>[Velocita-Nexus] Intercepted URL:</info> ' . $url, true, IOInterface::DEBUG);
+                        $this->io->writeError('<info>[Velocita-Nexus] Rewriting URL to Nexus Proxy:</info> ' . $nexusUrl, true, IOInterface::DEBUG);
                     }
                     $event->setProcessedUrl($nexusUrl);
                     return;
@@ -187,13 +187,13 @@ class UrlMapper
 
                 // Step 2: If missing in Nexus, request metadata to trigger caching, then fall back immediately
                 if ($this->io) {
-                    $this->io->writeError('<info>[Velocita-Nexus] Package missing in Nexus proxy. Triggering cache warmup for ' . $packageName . ' (' . $version . ')</info>');
+                    $this->io->writeError('<info>[Velocita-Nexus] Package missing in Nexus proxy. Triggering cache warmup for ' . $packageName . ' (' . $version . ')</info>', true, IOInterface::DEBUG);
                 }
                 $this->triggerNexusMetadataIndexing($this->rootUrl, $vendor, $name);
 
                 // We no longer sleep or wait for Nexus to finish downloading. Fall back to original URL immediately.
                 if ($this->io) {
-                    $this->io->writeError('<comment>[Velocita-Nexus] Falling back to original URL to avoid blocking:</comment> ' . $url);
+                    $this->io->writeError('<comment>[Velocita-Nexus] Falling back to original URL to avoid blocking:</comment> ' . $url, true, IOInterface::DEBUG);
                 }
                 return;
             }
