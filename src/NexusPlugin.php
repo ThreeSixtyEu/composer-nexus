@@ -115,16 +115,27 @@ class NexusPlugin implements PluginInterface, EventSubscriberInterface, Capable
 
     public function onPreCommandRun(): void
     {
+        if (!static::$enabled) {
+            return;
+        }
+        $url = $this->configuration->getURL();
+        $this->io->writeError(sprintf('<info>[Nexus]</info> Proxy rewrite is enabled (%s)', $url));
         $this->compatibilityDetector->fixPluginCompatibility();
     }
 
     public function onPostPackageInstall(PackageEvent $event): void
     {
+        if (!static::$enabled) {
+            return;
+        }
         $this->compatibilityDetector->onPackageInstall($event);
     }
 
     public function onPreFileDownload(PreFileDownloadEvent $event): void
     {
+        if (!static::$enabled) {
+            return;
+        }
         $this->urlMapper->rewriteDownloadUrl($event);
     }
 
