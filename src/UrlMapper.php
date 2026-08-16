@@ -9,6 +9,8 @@ use Composer\Package\PackageInterface;
 use Composer\Plugin\PreFileDownloadEvent;
 use GMTA\Velocita\Composer\Config\MirrorMapping;
 
+use function array_key_exists;
+use function count;
 use function explode;
 use function file_get_contents;
 use function filter_var;
@@ -28,6 +30,7 @@ use function strncmp;
 use function strpos;
 use function strtolower;
 use function trim;
+
 use const FILTER_VALIDATE_BOOLEAN;
 use const PHP_URL_HOST;
 
@@ -59,6 +62,10 @@ class UrlMapper
         $this->io = $io;
     }
 
+    /**
+     * @param non-empty-string $url
+     * @return non-empty-string
+     */
     public function applyMappings(string $url): string
     {
         $patchedUrl = $this->applyGitHubShortcut($url);
@@ -80,6 +87,10 @@ class UrlMapper
         return $patchedUrl;
     }
 
+    /**
+     * @param non-empty-string $url
+     * @return non-empty-string
+     */
     protected function applyGitHubShortcut(string $url): string
     {
         $matches = [];
@@ -93,7 +104,7 @@ class UrlMapper
 
     public function rewriteDownloadUrl(PreFileDownloadEvent $event): void
     {
-        if (self::$proxyOffline || empty($this->rootUrl)) {
+        if (self::$proxyOffline || $this->rootUrl === '') {
             return;
         }
 
@@ -114,7 +125,7 @@ class UrlMapper
         }
 
         // 3. If Velocita mirror mappings exist, use standard Velocita mapping rules
-        if (!empty($this->mappings)) {
+        if (count($this->mappings) > 0) {
             $mappedUrl = $this->applyMappings($url);
             if ($mappedUrl !== '' && $mappedUrl !== $url) {
                 if ($this->io) {
@@ -134,7 +145,11 @@ class UrlMapper
         $context = $event->getContext();
         if ($context instanceof PackageInterface) {
             $package = $context;
-        } elseif (is_array($context) && isset($context['package']) && $context['package'] instanceof PackageInterface) {
+        } elseif (
+            is_array($context)
+            && array_key_exists('package', $context)
+            && $context['package'] instanceof PackageInterface
+        ) {
             $package = $context['package'];
         }
 
@@ -145,8 +160,10 @@ class UrlMapper
             // Verify this download is actually the package dist archive, not a patch or auxiliary file
             $distUrl = $package->getDistUrl();
             if ($distUrl) {
-                $distHost = parse_url($distUrl, PHP_URL_HOST);
-                $urlHost = parse_url($url, PHP_URL_HOST);
+                $patchedDistUrl = $this->applyGitHubShortcut($distUrl);
+                $patchedUrl = $this->applyGitHubShortcut($url);
+                $distHost = parse_url($patchedDistUrl, PHP_URL_HOST);
+                $urlHost = parse_url($patchedUrl, PHP_URL_HOST);
                 if ($distHost && $urlHost && $distHost !== $urlHost) {
                     return;
                 }
@@ -165,8 +182,15 @@ class UrlMapper
                     $reference = $m[1];
                 }
 
-                // Query Nexus metadata to find exact dist URL assigned by Nexus (handles version aliases & commit groups)
-                $nexusUrl = $this->resolveNexusDistUrl($this->rootUrl, $vendor, $name, $version, $reference) ?: $defaultNexusUrl;
+                // Query Nexus metadata to find exact dist URL assigned by Nexus
+                // (handles version aliases & commit groups)
+                $nexusUrl = $this->resolveNexusDistUrl(
+                    $this->rootUrl,
+                    $vendor,
+                    $name,
+                    $version,
+                    $reference
+                ) ?: $defaultNexusUrl;
 
                 // Step 1: Check if package is already cached in Nexus proxy
                 $exists = $this->urlExistsInNexus($nexusUrl);
@@ -174,15 +198,26 @@ class UrlMapper
                 if ($exists === null) {
                     self::$proxyOffline = true;
                     if ($this->io) {
-                        $this->io->writeError('<warning>[Velocita-Nexus] Proxy server appears offline or timed out. Disabling proxy for remaining packages.</warning>');
+                        $this->io->writeError(
+                            '<warning>[Velocita-Nexus] Proxy server appears offline or timed out.'
+                            . ' Disabling proxy for remaining packages.</warning>'
+                        );
                     }
                     return;
                 }
 
                 if ($exists === true && $nexusUrl !== '') {
                     if ($this->io) {
-                        $this->io->writeError('<info>[Velocita-Nexus] Intercepted URL:</info> ' . $url, true, IOInterface::DEBUG);
-                        $this->io->writeError('<info>[Velocita-Nexus] Rewriting URL to Nexus Proxy:</info> ' . $nexusUrl, true, IOInterface::DEBUG);
+                        $this->io->writeError(
+                            '<info>[Velocita-Nexus] Intercepted URL:</info> ' . $url,
+                            true,
+                            IOInterface::DEBUG
+                        );
+                        $this->io->writeError(
+                            '<info>[Velocita-Nexus] Rewriting URL to Nexus Proxy:</info> ' . $nexusUrl,
+                            true,
+                            IOInterface::DEBUG
+                        );
                     }
                     $event->setProcessedUrl($nexusUrl);
                     return;
@@ -190,26 +225,44 @@ class UrlMapper
 
                 // Step 2: If missing in Nexus, request metadata to trigger caching, then fall back immediately
                 if ($this->io) {
-                    $this->io->writeError('<info>[Velocita-Nexus] Package missing in Nexus proxy. Triggering cache warmup for ' . $packageName . ' (' . $version . ')</info>', true, IOInterface::DEBUG);
+                    $this->io->writeError(
+                        sprintf(
+                            '<info>[Velocita-Nexus] Package missing in Nexus proxy.'
+                            . ' Triggering cache warmup for %s (%s)</info>',
+                            $packageName,
+                            $version
+                        ),
+                        true,
+                        IOInterface::DEBUG
+                    );
                 }
                 $this->triggerNexusMetadataIndexing($this->rootUrl, $vendor, $name);
 
                 // We no longer sleep or wait for Nexus to finish downloading. Fall back to original URL immediately.
                 if ($this->io) {
-                    $this->io->writeError('<comment>[Velocita-Nexus] Falling back to original URL to avoid blocking:</comment> ' . $url, true, IOInterface::DEBUG);
+                    $this->io->writeError(
+                        '<comment>[Velocita-Nexus] Falling back to original URL to avoid blocking:</comment> ' . $url,
+                        true,
+                        IOInterface::DEBUG
+                    );
                 }
                 return;
             }
         }
     }
 
-    private function resolveNexusDistUrl(string $proxyBaseClean, string $vendor, string $name, string $version, ?string $reference = null): ?string
-    {
+    private function resolveNexusDistUrl(
+        string $proxyBaseClean,
+        string $vendor,
+        string $name,
+        string $version,
+        ?string $reference = null
+    ): ?string {
         $vEnc = rawurlencode($vendor);
         $nEnc = rawurlencode($name);
         $metadataUrl = "{$proxyBaseClean}/p2/{$vEnc}/{$nEnc}.json";
 
-        if (isset(self::$metadataCache[$metadataUrl])) {
+        if (array_key_exists($metadataUrl, self::$metadataCache)) {
             $json = self::$metadataCache[$metadataUrl];
         } else {
             $json = $this->fetchUrlQuietly($metadataUrl, 2);
@@ -221,7 +274,12 @@ class UrlMapper
         }
 
         $data = @json_decode($json, true);
-        if (!is_array($data) || !isset($data['packages']["{$vendor}/{$name}"])) {
+        if (
+            !is_array($data)
+            || !array_key_exists('packages', $data)
+            || !is_array($data['packages'])
+            || !array_key_exists("{$vendor}/{$name}", $data['packages'])
+        ) {
             return null;
         }
 
@@ -232,19 +290,42 @@ class UrlMapper
 
         $currentDistUrl = null;
         foreach ($pkgs as $p) {
-            if (isset($p['dist']['url'])) {
+            if (
+                is_array($p)
+                && array_key_exists('dist', $p)
+                && is_array($p['dist'])
+                && array_key_exists('url', $p['dist'])
+                && is_string($p['dist']['url'])
+            ) {
                 $currentDistUrl = $p['dist']['url'];
             }
 
-            $ver = $p['version'] ?? null;
-            $ref = $p['reference'] ?? ($p['dist']['reference'] ?? null);
+            $ver = (is_array($p) && array_key_exists('version', $p) && is_string($p['version'])) ? $p['version'] : null;
+            $ref = null;
+            if (is_array($p)) {
+                if (array_key_exists('reference', $p) && is_string($p['reference'])) {
+                    $ref = $p['reference'];
+                } elseif (
+                    array_key_exists('dist', $p)
+                    && is_array($p['dist'])
+                    && array_key_exists('reference', $p['dist'])
+                    && is_string($p['dist']['reference'])
+                ) {
+                    $ref = $p['dist']['reference'];
+                }
+            }
 
-            $versionMatches = ($ver === $version || $ver === "v{$version}" || ltrim((string)$ver, 'v') === ltrim($version, 'v'));
-            $referenceMatches = ($reference && $ref === $reference);
+            $versionMatches = ($ver === $version
+                || $ver === "v{$version}"
+                || ltrim((string)$ver, 'v') === ltrim($version, 'v'));
+            $referenceMatches = ($reference !== null && $reference !== '' && $ref === $reference);
 
             if ($versionMatches || $referenceMatches) {
                 if ($currentDistUrl) {
-                    if (!self::startsWith($currentDistUrl, 'http://') && !self::startsWith($currentDistUrl, 'https://')) {
+                    if (
+                        !self::startsWith($currentDistUrl, 'http://')
+                        && !self::startsWith($currentDistUrl, 'https://')
+                    ) {
                         return "{$proxyBaseClean}/" . ltrim($currentDistUrl, '/');
                     }
                     return $currentDistUrl;
@@ -275,7 +356,10 @@ class UrlMapper
 
         if ($insecure && !self::$insecureWarned && $this->io) {
             self::$insecureWarned = true;
-            $this->io->writeError('<warning>[Velocita-Nexus] Insecure TLS mode enabled (COMPOSER_DIST_PROXY_INSECURE / VELOCITA_INSECURE active).</warning>');
+            $this->io->writeError(
+                '<warning>[Velocita-Nexus] Insecure TLS mode enabled'
+                . ' (COMPOSER_DIST_PROXY_INSECURE / VELOCITA_INSECURE active).</warning>'
+            );
         }
 
         if (function_exists('curl_init')) {
@@ -318,13 +402,13 @@ class UrlMapper
         $context = stream_context_create($contextOptions);
         $res = @file_get_contents($url, false, $context);
 
-        if ($res === false && empty($http_response_header)) {
+        if ($res === false && count($http_response_header) === 0) {
             return null;
         }
 
-        if (!empty($http_response_header)) {
+        if (count($http_response_header) > 0) {
             preg_match('#^HTTP/.*\s+(\d{3})\s+#i', $http_response_header[0], $matches);
-            $code = isset($matches[1]) ? (int)$matches[1] : 0;
+            $code = array_key_exists(1, $matches) ? (int)$matches[1] : 0;
             return $code >= 200 && $code < 300;
         }
         return false;

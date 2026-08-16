@@ -27,3 +27,7 @@ services:
 
 volumes:
   nexus-data:
+
+networks:
+  default:
+    name: velocita-test-network

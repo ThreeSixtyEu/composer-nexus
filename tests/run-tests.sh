@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "${SCRIPT_DIR}/.."
 
-network="${DOCKER_NETWORK:-composer-nexus_default}"
+network="${DOCKER_NETWORK:-velocita-test-network}"
 velocitaUrl="${1:-http://velocita-proxy:8080/}"
 nexusUrl="${2:-http://nexus-proxy:8081/repository/composer-proxy/}"
 

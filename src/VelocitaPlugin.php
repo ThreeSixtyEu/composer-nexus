@@ -79,9 +79,21 @@ class VelocitaPlugin implements PluginInterface, EventSubscriberInterface, Capab
         } catch (Exception $e) {
             $msg = $e->getMessage();
             if (strpos($msg, '404') !== false) {
-                $this->io->writeError(sprintf('[Velocita-Nexus] Remote mirrors.json returned 404; assuming Nexus Proxy mode.'), true, IOInterface::VERBOSE);
+                $this->io->writeError(
+                    '[Velocita-Nexus] Remote mirrors.json returned 404; assuming Nexus Proxy mode.',
+                    true,
+                    IOInterface::VERBOSE
+                );
             } else {
-                $this->io->writeError(sprintf('<warning>[Velocita-Nexus] Could not fetch remote mirrors.json (%s). Falling back to Nexus Proxy mode.</warning>', $msg), true, IOInterface::NORMAL);
+                $this->io->writeError(
+                    sprintf(
+                        '<warning>[Velocita-Nexus] Could not fetch remote mirrors.json (%s).'
+                        . ' Falling back to Nexus Proxy mode.</warning>',
+                        $msg
+                    ),
+                    true,
+                    IOInterface::NORMAL
+                );
             }
             $mirrors = [];
         }

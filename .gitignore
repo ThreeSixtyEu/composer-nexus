@@ -1,4 +1,6 @@
 /.env
+/.env.*
+/bin/
 /.phpcs-cache
 /composer.lock
 /phpcs.xml
