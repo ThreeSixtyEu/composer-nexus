@@ -1,5 +1,5 @@
 #!/bin/ash
-set -eu
+set -euo pipefail
 
 proxyUrl="${PROXY_URL:-${VELOCITA_URL:-}}"
 proxyType="${PROXY_TYPE:-velocita}"
