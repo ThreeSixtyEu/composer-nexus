@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-NEXUS_URL="http://nexus:8081"
+NEXUS_URL="${NEXUS_URL:-http://nexus-proxy:8081}"
 echo "Waiting for Nexus 3 to start at ${NEXUS_URL}..."
 
 until curl -s -f "${NEXUS_URL}/service/rest/v1/status" > /dev/null 2>&1; do

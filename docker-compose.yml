@@ -4,6 +4,10 @@ services:
     container_name: velocita-proxy
     ports:
       - "8080:8080"
+    environment:
+      - MIRROR_GITHUB_URL=https://codeload.github.com/
+      - MIRROR_GITHUB_API_URL=https://api.github.com/
+      - MIRROR_PACKAGIST_URL=https://repo.packagist.org/
     restart: unless-stopped
 
   nexus:

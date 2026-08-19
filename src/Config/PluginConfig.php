@@ -14,7 +14,7 @@ use const FILTER_VALIDATE_URL;
 class PluginConfig
 {
     protected bool $enabled = false;
-    protected ?string $url;
+    protected ?string $url = null;
 
     public function isEnabled(): bool
     {
