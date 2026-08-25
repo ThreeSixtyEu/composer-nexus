@@ -7,7 +7,7 @@ enableCmd="${proxyType}:enable"
 disableCmd="${proxyType}:disable"
 
 # Show versions
-phpVersion=$(php -i | grep -m 1 'PHP Version' | cut -d' ' -f4)
+phpVersion=$(php -r 'echo PHP_VERSION;')
 composerVersion=$(composer --version | cut -d' ' -f3)
 echo
 echo "PHP ${phpVersion} - Composer ${composerVersion} - Mode: ${proxyType} (${proxyUrl})"
@@ -21,6 +21,7 @@ cleanup() {
 
 runInstall() {
     local outputPath="$1"
+    mkdir -p "$(dirname "$outputPath")"
     cleanup
     composer install --no-interaction --no-autoloader --no-scripts --profile -vvv 2>&1 | tee "${outputPath}"
 }
@@ -28,11 +29,13 @@ runInstall() {
 runCreateProject() {
     local packageName="$1"
     local outputPath="$2"
+    mkdir -p "$(dirname "$outputPath")"
     cleanup
     composer create-project --no-interaction --profile -vvv "${packageName}" project 2>&1 | tee "${outputPath}"
 }
 
 installPlugin() {
+    composer global config --no-plugins allow-plugins.gmta/composer-velocita true
     composer global config repositories.velocita-src path /usr/src/velocita/
     composer global require gmta/composer-velocita @dev
 }
@@ -63,8 +66,10 @@ runInstall "/output/${proxyType}-install-output.txt"
 # Symfony Flex install
 disablePlugin
 if [[ "${phpVersion}" == 7.4.* ]]; then
+    composer global config --no-plugins allow-plugins.symfony/flex true
     composer global require symfony/flex:1.20.2
 else
+    composer global config --no-plugins allow-plugins.symfony/flex true
     composer global require symfony/flex:2.3.3
 fi
 runInstall /output/flex-install-output.txt
