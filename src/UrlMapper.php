@@ -400,6 +400,7 @@ class UrlMapper
         }
 
         $context = stream_context_create($contextOptions);
+        $http_response_header = [];
         $res = @file_get_contents($url, false, $context);
 
         if ($res === false && count($http_response_header) === 0) {
