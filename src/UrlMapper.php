@@ -12,13 +12,7 @@ use GMTA\Velocita\Composer\Config\MirrorMapping;
 use function array_key_exists;
 use function count;
 use function explode;
-use function file_get_contents;
-use function filter_var;
-use function function_exists;
-use function getenv;
 use function is_array;
-use function is_string;
-use function json_decode;
 use function ltrim;
 use function parse_url;
 use function preg_match;
@@ -31,7 +25,6 @@ use function strpos;
 use function strtolower;
 use function trim;
 
-use const FILTER_VALIDATE_BOOLEAN;
 use const PHP_URL_HOST;
 
 class UrlMapper
@@ -44,13 +37,6 @@ class UrlMapper
      */
     private array $mappings;
     private ?IOInterface $io;
-
-    private static bool $proxyOffline = false;
-    /**
-     * @var array<string, string|null>
-     */
-    private static array $metadataCache = [];
-    private static bool $insecureWarned = false;
 
     /**
      * @param MirrorMapping[] $mappings
@@ -104,7 +90,7 @@ class UrlMapper
 
     public function rewriteDownloadUrl(PreFileDownloadEvent $event): void
     {
-        if (self::$proxyOffline || $this->rootUrl === '') {
+        if ($this->rootUrl === '') {
             return;
         }
 
@@ -140,7 +126,7 @@ class UrlMapper
             return;
         }
 
-        // Extract Package object from context
+        // 4. Nexus Proxy mode: Extract package and rewrite directly to Nexus
         $package = null;
         $context = $event->getContext();
         if ($context instanceof PackageInterface) {
@@ -174,166 +160,29 @@ class UrlMapper
                 $vEnc = rawurlencode($vendor);
                 $nEnc = rawurlencode($name);
                 $verEnc = rawurlencode($version);
-                $defaultNexusUrl = "{$this->rootUrl}/{$vEnc}/{$nEnc}/{$verEnc}/{$vEnc}-{$nEnc}-{$verEnc}.zip";
 
-                // Extract git commit reference from package or URL if available
-                $reference = $package->getDistReference() ?: $package->getSourceReference();
-                if (!$reference && preg_match('#/zipball/([a-f0-9]+)#i', $url, $m)) {
-                    $reference = $m[1];
+                if (self::startsWith($version, 'dev-')) {
+                    $nexusUrl = "{$this->rootUrl}/{$vEnc}/{$nEnc}~dev/{$verEnc}/{$vEnc}-{$nEnc}~dev-{$verEnc}";
+                } else {
+                    $nexusUrl = "{$this->rootUrl}/{$vEnc}/{$nEnc}/{$verEnc}/{$vEnc}-{$nEnc}-{$verEnc}";
                 }
 
-                // Query Nexus metadata to find exact dist URL assigned by Nexus
-                // (handles version aliases & commit groups)
-                $nexusUrl = $this->resolveNexusDistUrl(
-                    $this->rootUrl,
-                    $vendor,
-                    $name,
-                    $version,
-                    $reference
-                ) ?: $defaultNexusUrl;
-
-                // Step 1: Check if package is already cached in Nexus proxy
-                $exists = $this->urlExistsInNexus($nexusUrl);
-
-                if ($exists === null) {
-                    self::$proxyOffline = true;
-                    if ($this->io) {
-                        $this->io->writeError(
-                            '<warning>[Velocita-Nexus] Proxy server appears offline or timed out.'
-                            . ' Disabling proxy for remaining packages.</warning>'
-                        );
-                    }
-                    return;
-                }
-
-                if ($exists === true && $nexusUrl !== '') {
-                    if ($this->io) {
-                        $this->io->writeError(
-                            '<info>[Velocita-Nexus] Intercepted URL:</info> ' . $url,
-                            true,
-                            IOInterface::DEBUG
-                        );
-                        $this->io->writeError(
-                            '<info>[Velocita-Nexus] Rewriting URL to Nexus Proxy:</info> ' . $nexusUrl,
-                            true,
-                            IOInterface::DEBUG
-                        );
-                    }
-                    $event->setProcessedUrl($nexusUrl);
-                    return;
-                }
-
-                // Step 2: If missing in Nexus, request metadata to trigger caching, then fall back immediately
                 if ($this->io) {
                     $this->io->writeError(
-                        sprintf(
-                            '<info>[Velocita-Nexus] Package missing in Nexus proxy.'
-                            . ' Triggering cache warmup for %s (%s)</info>',
-                            $packageName,
-                            $version
-                        ),
+                        '<info>[Velocita-Nexus] Intercepted URL:</info> ' . $url,
+                        true,
+                        IOInterface::DEBUG
+                    );
+                    $this->io->writeError(
+                        '<info>[Velocita-Nexus] Rewriting URL to Nexus Proxy:</info> ' . $nexusUrl,
                         true,
                         IOInterface::DEBUG
                     );
                 }
-                $this->triggerNexusMetadataIndexing($this->rootUrl, $vendor, $name);
 
-                // We no longer sleep or wait for Nexus to finish downloading. Fall back to original URL immediately.
-                if ($this->io) {
-                    $this->io->writeError(
-                        '<comment>[Velocita-Nexus] Falling back to original URL to avoid blocking:</comment> ' . $url,
-                        true,
-                        IOInterface::DEBUG
-                    );
-                }
-                return;
+                $event->setProcessedUrl($nexusUrl);
             }
         }
-    }
-
-    private function resolveNexusDistUrl(
-        string $proxyBaseClean,
-        string $vendor,
-        string $name,
-        string $version,
-        ?string $reference = null
-    ): ?string {
-        $vEnc = rawurlencode($vendor);
-        $nEnc = rawurlencode($name);
-        $metadataUrl = "{$proxyBaseClean}/p2/{$vEnc}/{$nEnc}.json";
-
-        if (array_key_exists($metadataUrl, self::$metadataCache)) {
-            $json = self::$metadataCache[$metadataUrl];
-        } else {
-            $json = $this->fetchUrlQuietly($metadataUrl, 2);
-            self::$metadataCache[$metadataUrl] = $json;
-        }
-
-        if (!$json) {
-            return null;
-        }
-
-        $data = @json_decode($json, true);
-        if (
-            !is_array($data)
-            || !array_key_exists('packages', $data)
-            || !is_array($data['packages'])
-            || !array_key_exists("{$vendor}/{$name}", $data['packages'])
-        ) {
-            return null;
-        }
-
-        $pkgs = $data['packages']["{$vendor}/{$name}"];
-        if (!is_array($pkgs)) {
-            return null;
-        }
-
-        $currentDistUrl = null;
-        foreach ($pkgs as $p) {
-            if (
-                is_array($p)
-                && array_key_exists('dist', $p)
-                && is_array($p['dist'])
-                && array_key_exists('url', $p['dist'])
-                && is_string($p['dist']['url'])
-            ) {
-                $currentDistUrl = $p['dist']['url'];
-            }
-
-            $ver = (is_array($p) && array_key_exists('version', $p) && is_string($p['version'])) ? $p['version'] : null;
-            $ref = null;
-            if (is_array($p)) {
-                if (array_key_exists('reference', $p) && is_string($p['reference'])) {
-                    $ref = $p['reference'];
-                } elseif (
-                    array_key_exists('dist', $p)
-                    && is_array($p['dist'])
-                    && array_key_exists('reference', $p['dist'])
-                    && is_string($p['dist']['reference'])
-                ) {
-                    $ref = $p['dist']['reference'];
-                }
-            }
-
-            $versionMatches = ($ver === $version
-                || $ver === "v{$version}"
-                || ltrim((string)$ver, 'v') === ltrim($version, 'v'));
-            $referenceMatches = ($reference !== null && $reference !== '' && $ref === $reference);
-
-            if ($versionMatches || $referenceMatches) {
-                if ($currentDistUrl) {
-                    if (
-                        !self::startsWith($currentDistUrl, 'http://')
-                        && !self::startsWith($currentDistUrl, 'https://')
-                    ) {
-                        return "{$proxyBaseClean}/" . ltrim($currentDistUrl, '/');
-                    }
-                    return $currentDistUrl;
-                }
-            }
-        }
-
-        return null;
     }
 
     private static function startsWith(string $haystack, string $needle): bool
@@ -344,128 +193,5 @@ class UrlMapper
     private static function contains(string $haystack, string $needle): bool
     {
         return $needle === '' || strpos($haystack, $needle) !== false;
-    }
-
-    /**
-     * @return bool|null True if exists, false if 404/other, null if connection error or timeout
-     */
-    private function urlExistsInNexus(string $url): ?bool
-    {
-        $insecure = filter_var(getenv('COMPOSER_DIST_PROXY_INSECURE'), FILTER_VALIDATE_BOOLEAN)
-            || filter_var(getenv('VELOCITA_INSECURE'), FILTER_VALIDATE_BOOLEAN);
-
-        if ($insecure && !self::$insecureWarned && $this->io) {
-            self::$insecureWarned = true;
-            $this->io->writeError(
-                '<warning>[Velocita-Nexus] Insecure TLS mode enabled'
-                . ' (COMPOSER_DIST_PROXY_INSECURE / VELOCITA_INSECURE active).</warning>'
-            );
-        }
-
-        if (function_exists('curl_init')) {
-            $ch = curl_init($url);
-            curl_setopt($ch, CURLOPT_NOBODY, true);
-            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 5);
-            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
-            if ($insecure) {
-                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-                curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-            }
-            curl_exec($ch);
-
-            if (curl_errno($ch)) {
-                curl_close($ch);
-                return null;
-            }
-
-            $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            curl_close($ch);
-            return $code >= 200 && $code < 300;
-        }
-
-        $contextOptions = [
-            'http' => [
-                'method' => 'HEAD',
-                'timeout' => 5,
-                'ignore_errors' => true,
-            ],
-        ];
-        if ($insecure) {
-            $contextOptions['ssl'] = [
-                'verify_peer' => false,
-                'verify_peer_name' => false,
-            ];
-        }
-
-        $context = stream_context_create($contextOptions);
-        $http_response_header = [];
-        $res = @file_get_contents($url, false, $context);
-
-        if ($res === false && count($http_response_header) === 0) {
-            return null;
-        }
-
-        if (count($http_response_header) > 0) {
-            preg_match('#^HTTP/.*\s+(\d{3})\s+#i', $http_response_header[0], $matches);
-            $code = array_key_exists(1, $matches) ? (int)$matches[1] : 0;
-            return $code >= 200 && $code < 300;
-        }
-        return false;
-    }
-
-    private function triggerNexusMetadataIndexing(string $proxyBase, string $vendor, string $name): void
-    {
-        $vEnc = rawurlencode($vendor);
-        $nEnc = rawurlencode($name);
-        $urls = [
-            "{$proxyBase}/p2/{$vEnc}/{$nEnc}.json",
-            "{$proxyBase}/p/{$vEnc}/{$nEnc}.json",
-        ];
-        foreach ($urls as $url) {
-            $this->fetchUrlQuietly($url, 1);
-        }
-    }
-
-    private function fetchUrlQuietly(string $url, int $timeout = 2): ?string
-    {
-        $insecure = filter_var(getenv('COMPOSER_DIST_PROXY_INSECURE'), FILTER_VALIDATE_BOOLEAN)
-            || filter_var(getenv('VELOCITA_INSECURE'), FILTER_VALIDATE_BOOLEAN);
-
-        if (function_exists('curl_init')) {
-            $ch = curl_init($url);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-            curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
-            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 1);
-            if ($insecure) {
-                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-                curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-            }
-            $res = curl_exec($ch);
-            curl_close($ch);
-
-            return is_string($res) ? $res : null;
-        }
-
-        $contextOptions = [
-            'http' => [
-                'method' => 'GET',
-                'timeout' => $timeout,
-                'ignore_errors' => true,
-            ],
-        ];
-        if ($insecure) {
-            $contextOptions['ssl'] = [
-                'verify_peer' => false,
-                'verify_peer_name' => false,
-            ];
-        }
-
-        $context = stream_context_create($contextOptions);
-        $res = @file_get_contents($url, false, $context);
-
-        return is_string($res) ? $res : null;
     }
 }
