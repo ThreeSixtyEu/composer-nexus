@@ -12,7 +12,11 @@ use GMTA\Velocita\Composer\Config\MirrorMapping;
 use function array_key_exists;
 use function count;
 use function explode;
+use function file_get_contents;
+use function function_exists;
 use function is_array;
+use function is_string;
+use function json_decode;
 use function ltrim;
 use function parse_url;
 use function preg_match;
@@ -20,6 +24,7 @@ use function preg_quote;
 use function rawurlencode;
 use function rtrim;
 use function sprintf;
+use function stream_context_create;
 use function strncmp;
 use function strpos;
 use function strtolower;
@@ -37,6 +42,11 @@ class UrlMapper
      */
     private array $mappings;
     private ?IOInterface $io;
+
+    /**
+     * @var array<string, string|null>
+     */
+    private static array $metadataCache = [];
 
     /**
      * @param MirrorMapping[] $mappings
@@ -162,10 +172,26 @@ class UrlMapper
                 $verEnc = rawurlencode($version);
 
                 if (self::startsWith($version, 'dev-')) {
-                    $nexusUrl = "{$this->rootUrl}/{$vEnc}/{$nEnc}~dev/{$verEnc}/{$vEnc}-{$nEnc}~dev-{$verEnc}";
+                    $defaultNexusUrl = "{$this->rootUrl}/{$vEnc}/{$nEnc}~dev/{$verEnc}/{$vEnc}-{$nEnc}~dev-{$verEnc}";
                 } else {
-                    $nexusUrl = "{$this->rootUrl}/{$vEnc}/{$nEnc}/{$verEnc}/{$vEnc}-{$nEnc}-{$verEnc}";
+                    $defaultNexusUrl = "{$this->rootUrl}/{$vEnc}/{$nEnc}/{$verEnc}/{$vEnc}-{$nEnc}-{$verEnc}";
                 }
+
+                // Extract git commit reference from package or URL if available
+                $reference = $package->getDistReference() ?: $package->getSourceReference();
+                if (!$reference && preg_match('#/zipball/([a-f0-9]+)#i', $url, $m)) {
+                    $reference = $m[1];
+                }
+
+                // Query Nexus metadata to resolve exact dist URL assigned by Nexus
+                // (handles version aliases & versions sharing the same commit)
+                $nexusUrl = $this->resolveNexusDistUrl(
+                    $this->rootUrl,
+                    $vendor,
+                    $name,
+                    $version,
+                    $reference
+                ) ?: $defaultNexusUrl;
 
                 if ($this->io) {
                     $this->io->writeError(
@@ -183,6 +209,119 @@ class UrlMapper
                 $event->setProcessedUrl($nexusUrl);
             }
         }
+    }
+
+    private function resolveNexusDistUrl(
+        string $proxyBaseClean,
+        string $vendor,
+        string $name,
+        string $version,
+        ?string $reference = null
+    ): ?string {
+        $vEnc = rawurlencode($vendor);
+        $nEnc = rawurlencode($name);
+        $metadataUrl = "{$proxyBaseClean}/p2/{$vEnc}/{$nEnc}.json";
+
+        if (array_key_exists($metadataUrl, self::$metadataCache)) {
+            $json = self::$metadataCache[$metadataUrl];
+        } else {
+            $json = $this->fetchUrlQuietly($metadataUrl, 2);
+            self::$metadataCache[$metadataUrl] = $json;
+        }
+
+        if (!$json) {
+            return null;
+        }
+
+        $data = @json_decode($json, true);
+        if (
+            !is_array($data)
+            || !array_key_exists('packages', $data)
+            || !is_array($data['packages'])
+            || !array_key_exists("{$vendor}/{$name}", $data['packages'])
+        ) {
+            return null;
+        }
+
+        $pkgs = $data['packages']["{$vendor}/{$name}"];
+        if (!is_array($pkgs)) {
+            return null;
+        }
+
+        $currentDistUrl = null;
+        foreach ($pkgs as $p) {
+            if (
+                is_array($p)
+                && array_key_exists('dist', $p)
+                && is_array($p['dist'])
+                && array_key_exists('url', $p['dist'])
+                && is_string($p['dist']['url'])
+            ) {
+                $currentDistUrl = $p['dist']['url'];
+            }
+
+            $ver = (is_array($p) && array_key_exists('version', $p) && is_string($p['version'])) ? $p['version'] : null;
+            $ref = null;
+            if (is_array($p)) {
+                if (array_key_exists('reference', $p) && is_string($p['reference'])) {
+                    $ref = $p['reference'];
+                } elseif (
+                    array_key_exists('dist', $p)
+                    && is_array($p['dist'])
+                    && array_key_exists('reference', $p['dist'])
+                    && is_string($p['dist']['reference'])
+                ) {
+                    $ref = $p['dist']['reference'];
+                }
+            }
+
+            $versionMatches = ($ver === $version
+                || $ver === "v{$version}"
+                || ltrim((string)$ver, 'v') === ltrim($version, 'v'));
+            $referenceMatches = ($reference !== null && $reference !== '' && $ref === $reference);
+
+            if ($versionMatches || $referenceMatches) {
+                if ($currentDistUrl) {
+                    if (
+                        !self::startsWith($currentDistUrl, 'http://')
+                        && !self::startsWith($currentDistUrl, 'https://')
+                    ) {
+                        return "{$proxyBaseClean}/" . ltrim($currentDistUrl, '/');
+                    }
+                    return $currentDistUrl;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private function fetchUrlQuietly(string $url, int $timeout = 2): ?string
+    {
+        if (function_exists('curl_init')) {
+            $ch = curl_init($url);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 1);
+            $res = curl_exec($ch);
+            if (\PHP_VERSION_ID < 80000) {
+                curl_close($ch);
+            }
+
+            return is_string($res) ? $res : null;
+        }
+
+        $context = stream_context_create([
+            'http' => [
+                'method' => 'GET',
+                'timeout' => $timeout,
+                'ignore_errors' => true,
+            ],
+        ]);
+        $res = @file_get_contents($url, false, $context);
+
+        return is_string($res) ? $res : null;
     }
 
     private static function startsWith(string $haystack, string $needle): bool
