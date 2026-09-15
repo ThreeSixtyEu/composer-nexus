@@ -296,6 +296,14 @@ class UrlMapper
         return null;
     }
 
+    /**
+     * Performs a quiet, out-of-band synchronous HTTP fetch using raw cURL or stream context.
+     *
+     * Note: This intentionally does not use Composer's HttpDownloader because this method
+     * is invoked synchronously inside the PreFileDownloadEvent listener. Calling HttpDownloader
+     * here would trigger recursive PreFileDownloadEvents, risk event-loop re-entrancy during
+     * batch downloads, and throw fatal TransportExceptions on 404s instead of quietly falling back.
+     */
     private function fetchUrlQuietly(string $url, int $timeout = 2): ?string
     {
         if (function_exists('curl_init')) {
