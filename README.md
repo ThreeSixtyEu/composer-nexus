@@ -37,6 +37,12 @@ composer nexus:enable https://nexus.your-domain.lan/repository/composer-proxy/
 After enabling and configuring Velocita / Nexus proxy, it is automatically used for all Composer projects when running `require`,
 `update`, `install`, etcetera.
 
+The chosen mode is stored as `type` (`velocita` or `nexus`) in `velocita.json` in your Composer home directory. Run
+the other `enable` command with a URL to switch modes.
+
+In Nexus mode, package dist archives are downloaded from the [Nexus Composer proxy repository](https://help.sonatype.com/en/composer-repositories.html)
+instead of GitHub. Package metadata is still fetched from the repositories configured in your project.
+
 ### Removal
 
 Disable the plugin by executing:

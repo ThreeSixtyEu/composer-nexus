@@ -22,13 +22,14 @@ class PluginConfigWriter
     }
 
     /**
-     * @return array{enabled: bool, url: ?string}
+     * @return array{enabled: bool, url: ?string, type: string}
      */
     protected function getPayload(): array
     {
         return [
             'enabled' => $this->pluginConfig->isEnabled(),
             'url'     => $this->pluginConfig->getURL(),
+            'type'    => $this->pluginConfig->getType(),
         ];
     }
 

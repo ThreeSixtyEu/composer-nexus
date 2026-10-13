@@ -10,7 +10,10 @@ use Composer\Plugin\PreFileDownloadEvent;
 use GMTA\Velocita\Composer\Config\MirrorMapping;
 
 use function array_key_exists;
-use function count;
+use function curl_close;
+use function curl_exec;
+use function curl_init;
+use function curl_setopt;
 use function explode;
 use function file_get_contents;
 use function function_exists;
@@ -25,22 +28,28 @@ use function rawurlencode;
 use function rtrim;
 use function sprintf;
 use function stream_context_create;
+use function strlen;
 use function strncmp;
 use function strpos;
 use function strtolower;
 use function trim;
 
+use const CURLOPT_CONNECTTIMEOUT;
+use const CURLOPT_FOLLOWLOCATION;
+use const CURLOPT_RETURNTRANSFER;
+use const CURLOPT_TIMEOUT;
 use const PHP_URL_HOST;
+use const PHP_VERSION_ID;
 
 class UrlMapper
 {
     private const GITHUB_REGEX = '#^https://api.github.com/repos/(?<package>.+)/zipball/(?<hash>[0-9a-f]+)$#i';
 
-    private string $rootUrl;
     /**
      * @var MirrorMapping[]
      */
     private array $mappings;
+    private string $rootUrl;
     private ?IOInterface $io;
 
     /**
@@ -51,10 +60,10 @@ class UrlMapper
     /**
      * @param MirrorMapping[] $mappings
      */
-    public function __construct(string $rootUrl, array $mappings = [], ?IOInterface $io = null)
+    public function __construct(string $rootUrl, array $mappings, ?IOInterface $io = null)
     {
-        $this->rootUrl = rtrim($rootUrl, '/');
         $this->mappings = $mappings;
+        $this->rootUrl = rtrim($rootUrl, '/');
         $this->io = $io;
     }
 
@@ -71,12 +80,13 @@ class UrlMapper
             $regex = sprintf('#^https?:%s(?<path>.+)$#i', preg_quote($prefix));
             $matches = [];
             if (preg_match($regex, $patchedUrl, $matches) === 1) {
-                return sprintf(
+                $patchedUrl = sprintf(
                     '%s/%s/%s',
                     rtrim($this->rootUrl, '/'),
                     trim($mapping->getPath(), '/'),
                     ltrim($matches['path'], '/')
                 );
+                break;
             }
         }
 
@@ -98,202 +108,170 @@ class UrlMapper
         return $url;
     }
 
-    public function rewriteDownloadUrl(PreFileDownloadEvent $event): void
+    public function rewriteNexusDownloadUrl(PreFileDownloadEvent $event): void
     {
-        if ($this->rootUrl === '') {
-            return;
-        }
-
         $url = $event->getProcessedUrl();
-        if (!$url) {
+        if ($this->rootUrl === '' || !self::isHttpUrl($url) || self::isPatchUrl($url)) {
             return;
         }
 
-        // 1. Only process remote HTTP/HTTPS URLs
-        if (!self::startsWith($url, 'http://') && !self::startsWith($url, 'https://')) {
+        $package = self::getEventPackage($event);
+        if ($package === null || !self::contains($package->getName(), '/')) {
             return;
         }
 
-        // 2. Skip patch and diff files (e.g. cweagans/composer-patches)
-        $lowerUrl = strtolower($url);
-        if (self::contains($lowerUrl, '.patch') || self::contains($lowerUrl, '.diff')) {
-            return;
-        }
-
-        // 3. If Velocita mirror mappings exist, use standard Velocita mapping rules
-        if (count($this->mappings) > 0) {
-            $mappedUrl = $this->applyMappings($url);
-            if ($mappedUrl !== '' && $mappedUrl !== $url) {
-                if ($this->io) {
-                    $this->io->write(
-                        sprintf('[Velocita] Mapped URL %s to %s', $url, $mappedUrl),
-                        true,
-                        IOInterface::DEBUG
-                    );
-                }
-                $event->setProcessedUrl($mappedUrl);
-            }
-            return;
-        }
-
-        // 4. Nexus Proxy mode: Extract package and rewrite directly to Nexus
-        $package = null;
-        $context = $event->getContext();
-        if ($context instanceof PackageInterface) {
-            $package = $context;
-        } elseif (
-            is_array($context)
-            && array_key_exists('package', $context)
-            && $context['package'] instanceof PackageInterface
-        ) {
-            $package = $context['package'];
-        }
-
-        if ($package) {
-            $packageName = $package->getName();
-            $version = $package->getPrettyVersion();
-
-            // Verify this download is actually the package dist archive, not a patch or auxiliary file
-            $distUrl = $package->getDistUrl();
-            if ($distUrl) {
-                $patchedDistUrl = $this->applyGitHubShortcut($distUrl);
-                $patchedUrl = $this->applyGitHubShortcut($url);
-                $distHost = parse_url($patchedDistUrl, PHP_URL_HOST);
-                $urlHost = parse_url($patchedUrl, PHP_URL_HOST);
-                if ($distHost && $urlHost && $distHost !== $urlHost) {
-                    return;
-                }
-            }
-
-            if (self::contains($packageName, '/')) {
-                [$vendor, $name] = explode('/', $packageName, 2);
-                $vEnc = rawurlencode($vendor);
-                $nEnc = rawurlencode($name);
-                $verEnc = rawurlencode($version);
-
-                if (self::startsWith($version, 'dev-')) {
-                    $defaultNexusUrl = "{$this->rootUrl}/{$vEnc}/{$nEnc}~dev/{$verEnc}/{$vEnc}-{$nEnc}~dev-{$verEnc}";
-                } else {
-                    $defaultNexusUrl = "{$this->rootUrl}/{$vEnc}/{$nEnc}/{$verEnc}/{$vEnc}-{$nEnc}-{$verEnc}";
-                }
-
-                // Extract git commit reference from package or URL if available
-                $reference = $package->getDistReference() ?: $package->getSourceReference();
-                if (!$reference && preg_match('#/zipball/([a-f0-9]+)#i', $url, $m)) {
-                    $reference = $m[1];
-                }
-
-                // Query Nexus metadata to resolve exact dist URL assigned by Nexus
-                // (handles version aliases & versions sharing the same commit)
-                $nexusUrl = $this->resolveNexusDistUrl(
-                    $this->rootUrl,
-                    $vendor,
-                    $name,
-                    $version,
-                    $reference
-                ) ?: $defaultNexusUrl;
-
-                if ($this->io) {
-                    $this->io->writeError(
-                        '<info>[Velocita-Nexus] Intercepted URL:</info> ' . $url,
-                        true,
-                        IOInterface::DEBUG
-                    );
-                    $this->io->writeError(
-                        '<info>[Velocita-Nexus] Rewriting URL to Nexus Proxy:</info> ' . $nexusUrl,
-                        true,
-                        IOInterface::DEBUG
-                    );
-                }
-
-                $event->setProcessedUrl($nexusUrl);
+        // Only rewrite the package's dist archive, not auxiliary downloads from other hosts
+        $distUrl = $package->getDistUrl();
+        if ($distUrl !== null && $distUrl !== '') {
+            $distHost = parse_url($this->applyGitHubShortcut($distUrl), PHP_URL_HOST);
+            $urlHost = parse_url($this->applyGitHubShortcut($url), PHP_URL_HOST);
+            if ($distHost && $urlHost && $distHost !== $urlHost) {
+                return;
             }
         }
+
+        [$vendor, $name] = explode('/', $package->getName(), 2);
+        $version = $package->getPrettyVersion();
+
+        $reference = $package->getDistReference() ?: $package->getSourceReference();
+        $matches = [];
+        if (!$reference && preg_match('#/zipball/([a-f0-9]+)#i', $url, $matches) === 1) {
+            $reference = $matches[1];
+        }
+
+        // Prefer the dist URL from Nexus' metadata, which handles version aliases and versions sharing a commit
+        $nexusUrl = $this->resolveNexusDistUrl($vendor, $name, $version, $reference)
+            ?? $this->getDefaultNexusDistUrl($vendor, $name, $version);
+
+        if ($this->io !== null) {
+            $this->io->writeError(
+                sprintf('[Velocita-Nexus] Rewriting URL %s to %s', $url, $nexusUrl),
+                true,
+                IOInterface::DEBUG
+            );
+        }
+        $event->setProcessedUrl($nexusUrl);
     }
 
-    private function resolveNexusDistUrl(
-        string $proxyBaseClean,
-        string $vendor,
-        string $name,
-        string $version,
-        ?string $reference = null
-    ): ?string {
-        $vEnc = rawurlencode($vendor);
-        $nEnc = rawurlencode($name);
-        $metadataUrl = "{$proxyBaseClean}/p2/{$vEnc}/{$nEnc}.json";
-
-        if (array_key_exists($metadataUrl, self::$metadataCache)) {
-            $json = self::$metadataCache[$metadataUrl];
-        } else {
-            $json = $this->fetchUrlQuietly($metadataUrl, 2);
-            self::$metadataCache[$metadataUrl] = $json;
+    private static function getEventPackage(PreFileDownloadEvent $event): ?PackageInterface
+    {
+        $context = $event->getContext();
+        if ($context instanceof PackageInterface) {
+            return $context;
         }
-
-        if (!$json) {
-            return null;
+        if (is_array($context) && ($context['package'] ?? null) instanceof PackageInterface) {
+            return $context['package'];
         }
-
-        $data = @json_decode($json, true);
-        if (
-            !is_array($data)
-            || !array_key_exists('packages', $data)
-            || !is_array($data['packages'])
-            || !array_key_exists("{$vendor}/{$name}", $data['packages'])
-        ) {
-            return null;
-        }
-
-        $pkgs = $data['packages']["{$vendor}/{$name}"];
-        if (!is_array($pkgs)) {
-            return null;
-        }
-
-        $currentDistUrl = null;
-        foreach ($pkgs as $p) {
-            if (
-                is_array($p)
-                && array_key_exists('dist', $p)
-                && is_array($p['dist'])
-                && array_key_exists('url', $p['dist'])
-                && is_string($p['dist']['url'])
-            ) {
-                $currentDistUrl = $p['dist']['url'];
-            }
-
-            $ver = (is_array($p) && array_key_exists('version', $p) && is_string($p['version'])) ? $p['version'] : null;
-            $ref = null;
-            if (is_array($p)) {
-                if (array_key_exists('reference', $p) && is_string($p['reference'])) {
-                    $ref = $p['reference'];
-                } elseif (
-                    array_key_exists('dist', $p)
-                    && is_array($p['dist'])
-                    && array_key_exists('reference', $p['dist'])
-                    && is_string($p['dist']['reference'])
-                ) {
-                    $ref = $p['dist']['reference'];
-                }
-            }
-
-            $versionMatches = ($ver === $version
-                || $ver === "v{$version}"
-                || ltrim((string)$ver, 'v') === ltrim($version, 'v'));
-            $referenceMatches = ($reference !== null && $reference !== '' && $ref === $reference);
-
-            if ($versionMatches || $referenceMatches) {
-                if ($currentDistUrl) {
-                    if (
-                        !self::startsWith($currentDistUrl, 'http://')
-                        && !self::startsWith($currentDistUrl, 'https://')
-                    ) {
-                        return "{$proxyBaseClean}/" . ltrim($currentDistUrl, '/');
-                    }
-                    return $currentDistUrl;
-                }
-            }
-        }
-
         return null;
+    }
+
+    /**
+     * @return non-empty-string
+     */
+    private function getDefaultNexusDistUrl(string $vendor, string $name, string $version): string
+    {
+        return sprintf(
+            '%1$s/%2$s/%3$s%5$s/%4$s/%2$s-%3$s%5$s-%4$s',
+            $this->rootUrl,
+            rawurlencode($vendor),
+            rawurlencode($name),
+            rawurlencode($version),
+            self::startsWith($version, 'dev-') ? '~dev' : ''
+        );
+    }
+
+    /**
+     * @return non-empty-string|null
+     */
+    private function resolveNexusDistUrl(string $vendor, string $name, string $version, ?string $reference): ?string
+    {
+        $distUrl = null;
+        $referenceDistUrl = null;
+        foreach ($this->getNexusPackageEntries($vendor, $name) as $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+
+            // p2 metadata is minified: a missing dist key means "same as the previous version"
+            if (array_key_exists('dist', $entry)) {
+                $distUrl = self::getDistUrl($entry['dist']);
+            }
+            if ($distUrl === null) {
+                continue;
+            }
+
+            // An exact version match wins; a matching commit reference is only used as a fallback
+            if (self::versionsMatch($entry['version'] ?? null, $version)) {
+                return $this->getAbsoluteNexusUrl($distUrl);
+            }
+            if ($referenceDistUrl === null && $reference && self::getEntryReference($entry) === $reference) {
+                $referenceDistUrl = $distUrl;
+            }
+        }
+
+        return $referenceDistUrl === null ? null : $this->getAbsoluteNexusUrl($referenceDistUrl);
+    }
+
+    /**
+     * @return array<mixed>
+     */
+    private function getNexusPackageEntries(string $vendor, string $name): array
+    {
+        $metadataUrl = sprintf('%s/p2/%s/%s.json', $this->rootUrl, rawurlencode($vendor), rawurlencode($name));
+        if (!array_key_exists($metadataUrl, self::$metadataCache)) {
+            self::$metadataCache[$metadataUrl] = $this->fetchUrlQuietly($metadataUrl);
+        }
+
+        $json = self::$metadataCache[$metadataUrl];
+        if ($json === null) {
+            return [];
+        }
+
+        $data = json_decode($json, true);
+        $packages = is_array($data) ? ($data['packages'] ?? null) : null;
+        $entries = is_array($packages) ? ($packages[$vendor . '/' . $name] ?? null) : null;
+        return is_array($entries) ? $entries : [];
+    }
+
+    /**
+     * @param mixed $dist
+     * @return non-empty-string|null
+     */
+    private static function getDistUrl($dist): ?string
+    {
+        $url = is_array($dist) ? ($dist['url'] ?? null) : null;
+        return is_string($url) && $url !== '' ? $url : null;
+    }
+
+    /**
+     * @param mixed $candidate
+     */
+    private static function versionsMatch($candidate, string $version): bool
+    {
+        return is_string($candidate) && ltrim($candidate, 'v') === ltrim($version, 'v');
+    }
+
+    /**
+     * @param array<mixed> $entry
+     */
+    private static function getEntryReference(array $entry): ?string
+    {
+        $reference = $entry['reference'] ?? null;
+        if (is_string($reference)) {
+            return $reference;
+        }
+        $dist = $entry['dist'] ?? null;
+        $reference = is_array($dist) ? ($dist['reference'] ?? null) : null;
+        return is_string($reference) ? $reference : null;
+    }
+
+    /**
+     * @param non-empty-string $url
+     * @return non-empty-string
+     */
+    private function getAbsoluteNexusUrl(string $url): string
+    {
+        return self::isHttpUrl($url) ? $url : $this->rootUrl . '/' . ltrim($url, '/');
     }
 
     /**
@@ -313,7 +291,7 @@ class UrlMapper
             curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
             curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 1);
             $res = curl_exec($ch);
-            if (\PHP_VERSION_ID < 80000) {
+            if (PHP_VERSION_ID < 80000) {
                 curl_close($ch);
             }
 
@@ -332,9 +310,21 @@ class UrlMapper
         return is_string($res) ? $res : null;
     }
 
+    private static function isHttpUrl(string $url): bool
+    {
+        return self::startsWith($url, 'http://') || self::startsWith($url, 'https://');
+    }
+
+    private static function isPatchUrl(string $url): bool
+    {
+        // Skip patch and diff files (e.g. cweagans/composer-patches)
+        $lowerUrl = strtolower($url);
+        return self::contains($lowerUrl, '.patch') || self::contains($lowerUrl, '.diff');
+    }
+
     private static function startsWith(string $haystack, string $needle): bool
     {
-        return $needle === '' || strncmp($haystack, $needle, \strlen($needle)) === 0;
+        return $needle === '' || strncmp($haystack, $needle, strlen($needle)) === 0;
     }
 
     private static function contains(string $haystack, string $needle): bool

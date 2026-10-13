@@ -9,6 +9,9 @@ use GMTA\Velocita\Composer\VelocitaPlugin;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
+use function sprintf;
+use function ucfirst;
+
 class DisableCommand extends BaseCommand
 {
     protected VelocitaPlugin $plugin;
@@ -25,7 +28,7 @@ class DisableCommand extends BaseCommand
         $this
             ->setName('velocita:disable')
             ->setAliases(['nexus:disable'])
-            ->setDescription('Disables the Velocita / Nexus plugin');
+            ->setDescription('Disables the plugin (Velocita and Nexus modes)');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -37,7 +40,7 @@ class DisableCommand extends BaseCommand
         // Write new configuration
         $this->plugin->writeConfiguration($config);
 
-        $output->writeln('Velocita / Nexus is now <warning>disabled</warning>.');
+        $output->writeln(sprintf('%s is now <warning>disabled</warning>.', ucfirst($config->getType())));
         return 0;
     }
 }

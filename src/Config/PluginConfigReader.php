@@ -15,7 +15,7 @@ use function json_decode;
 class PluginConfigReader
 {
     /**
-     * @param array{enabled?: bool, url?: string} $payload
+     * @param array{enabled?: bool, url?: string, type?: string} $payload
      */
     protected function getPluginConfigForPayload(array $payload): PluginConfig
     {
@@ -25,6 +25,9 @@ class PluginConfigReader
         }
         if (array_key_exists('url', $payload)) {
             $config->setURL($payload['url']);
+        }
+        if (array_key_exists('type', $payload)) {
+            $config->setType($payload['type']);
         }
         return $config;
     }

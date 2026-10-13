@@ -28,7 +28,6 @@ use UnexpectedValueException;
 
 use function is_array;
 use function sprintf;
-use function strpos;
 
 use const PHP_INT_MAX;
 
@@ -73,32 +72,20 @@ class VelocitaPlugin implements PluginInterface, EventSubscriberInterface, Capab
         if ($url === null) {
             throw new LogicException('Velocita enabled but no URL set');
         }
-        try {
-            $remoteConfig = $this->getRemoteConfig($url);
-            $mirrors = $remoteConfig->getMirrors();
-        } catch (Exception $e) {
-            $msg = $e->getMessage();
-            if (strpos($msg, '404') !== false) {
-                $this->io->writeError(
-                    '[Velocita-Nexus] Remote mirrors.json returned 404; assuming Nexus Proxy mode.',
-                    true,
-                    IOInterface::VERBOSE
-                );
-            } else {
-                $this->io->writeError(
-                    sprintf(
-                        '<warning>[Velocita-Nexus] Could not fetch remote mirrors.json (%s).'
-                        . ' Falling back to Nexus Proxy mode.</warning>',
-                        $msg
-                    ),
-                    true,
-                    IOInterface::NORMAL
-                );
+        if ($this->configuration->isNexus()) {
+            // Nexus proxies do not publish a mirrors.json; packages are rewritten to Nexus' own dist URLs
+            $this->urlMapper = new UrlMapper($url, [], $this->io);
+        } else {
+            try {
+                $remoteConfig = $this->getRemoteConfig($url);
+            } catch (Exception $e) {
+                $this->io->writeError(sprintf('Failed to retrieve remote config: %s', $e->getMessage()));
+                static::$enabled = false;
+                return;
             }
-            $mirrors = [];
+            $this->urlMapper = new UrlMapper($url, $remoteConfig->getMirrors());
         }
 
-        $this->urlMapper = new UrlMapper($url, $mirrors, $this->io);
         $this->compatibilityDetector = new CompatibilityDetector($this->composer, $this->io, $this->urlMapper);
     }
 
@@ -140,7 +127,21 @@ class VelocitaPlugin implements PluginInterface, EventSubscriberInterface, Capab
 
     public function onPreFileDownload(PreFileDownloadEvent $event): void
     {
-        $this->urlMapper->rewriteDownloadUrl($event);
+        if ($this->configuration->isNexus()) {
+            $this->urlMapper->rewriteNexusDownloadUrl($event);
+            return;
+        }
+
+        $originalUrl = $event->getProcessedUrl();
+        $mappedUrl = $this->urlMapper->applyMappings($originalUrl);
+        if ($mappedUrl !== $originalUrl) {
+            $this->io->write(
+                sprintf('%s(url=%s): mapped to %s', __METHOD__, $originalUrl, $mappedUrl),
+                true,
+                IOInterface::DEBUG
+            );
+        }
+        $event->setProcessedUrl($mappedUrl);
     }
 
     public function getConfiguration(): PluginConfig
